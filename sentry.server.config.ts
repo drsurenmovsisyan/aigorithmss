@@ -16,9 +16,8 @@ Sentry.init({
     // userInfo: false,
     // httpBodies: [],
   },
-      integrations: [
-        Sentry.vercelAIIntegration,
-        Sentry.consoleLoggingIntegration({ levels: ["log", "warn", "error"] }),
-      ],
-  },
+  integrations: [
+    Sentry.vercelAIIntegration,
+    Sentry.consoleLoggingIntegration({ levels: ["log", "warn", "error"] }),
+  ],
 });
