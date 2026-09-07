@@ -27,14 +27,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <body
-        className={`${inter.variable} ${plexMono.variable} antialiased`}
-      >
+      <html lang="en" suppressHydrationWarning>
+        <body
+          className={`${inter.variable} ${plexMono.variable} antialiased`}
+        >
           <Providers>
-        {children}
-        </Providers>
-      </body>
-    </html>
+            {children}
+          </Providers>
+        </body>
+      </html>
   );
 }
