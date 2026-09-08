@@ -83,7 +83,7 @@ export async function POST(request: Request) {
       .replace("{lineNumber}", lineNumber.toString());
 
     const { output } = await generateText({
-      model: anthropic("claude-3-7-sonnet-20250219"),
+      model: anthropic("claude-haiku-4-5"),
       output: Output.object({ schema: suggestionSchema }),
       prompt,
     });
