@@ -22,10 +22,7 @@ export async function POST(request: Request) {
   const body = await request.json();
   const { projectId } = requestSchema.parse(body);
 
-  const internalKey =
-    process.env.CONVEX_INTERNAL_KEY ||
-    process.env.AIGORITHM_CONVEX_INTERNAL_KEY ||
-    process.env.AIGORITHM_CONVEX_INTERNAL_KEY;
+  const internalKey = process.env.AIGORITHM_CONVEX_INTERNAL_KEY;
 
   if (!internalKey) {
     return NextResponse.json(
