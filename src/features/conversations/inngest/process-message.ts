@@ -124,7 +124,7 @@ export const processMessage = inngest.createFunction(
         name: "title-generator",
         system: TITLE_GENERATOR_SYSTEM_PROMPT,
         model: anthropic({
-          model: "claude-3-5-haiku-20241022",
+          model: "claude-haiku-4-5",
           defaultParameters: { temperature: 0, max_tokens: 50 },
         }),
        });
@@ -158,11 +158,11 @@ export const processMessage = inngest.createFunction(
 
     // Create the coding agent with file tools
     const codingAgent = createAgent({
-      name: "polaris",
+      name: "aigorithm",
       description: "An expert AI coding assistant",
       system: systemPrompt,
        model: anthropic({
-        model: "claude-opus-4-20250514",
+        model: "claude-haiku-4-5",
         defaultParameters: { temperature: 0.3, max_tokens: 16000 }
        }),
        tools: [
@@ -179,7 +179,7 @@ export const processMessage = inngest.createFunction(
 
     // Create network with single agent
     const network = createNetwork({
-      name: "polaris-network",
+      name: "aigorithm-network",
       agents: [codingAgent],
       maxIter: 20,
       router: ({ network }) => {
