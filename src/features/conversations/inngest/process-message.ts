@@ -40,7 +40,7 @@ export const processMessage = inngest.createFunction(
       const internalKey =
         process.env.CONVEX_INTERNAL_KEY ||
         process.env.AIGORITHM_CONVEX_INTERNAL_KEY ||
-        process.env.POLARIS_CONVEX_INTERNAL_KEY;
+        process.env.AIGORITHM_CONVEX_INTERNAL_KEY;
 
       // Update the message with error content
       if (internalKey) {
@@ -69,7 +69,7 @@ export const processMessage = inngest.createFunction(
     const internalKey =
       process.env.CONVEX_INTERNAL_KEY ||
       process.env.AIGORITHM_CONVEX_INTERNAL_KEY ||
-      process.env.POLARIS_CONVEX_INTERNAL_KEY; 
+      process.env.AIGORITHM_CONVEX_INTERNAL_KEY; 
 
     if (!internalKey) {
       throw new NonRetriableError("CONVEX_INTERNAL_KEY is not configured");

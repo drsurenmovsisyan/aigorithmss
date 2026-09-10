@@ -23,7 +23,7 @@ export async function POST(request: Request) {
   const internalKey =
     process.env.CONVEX_INTERNAL_KEY ||
     process.env.AIGORITHM_CONVEX_INTERNAL_KEY ||
-    process.env.POLARIS_CONVEX_INTERNAL_KEY;
+    process.env.AIGORITHM_CONVEX_INTERNAL_KEY;
 
   if (!internalKey) {
     return NextResponse.json(
