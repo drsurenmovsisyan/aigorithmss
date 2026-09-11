@@ -66,5 +66,5 @@ export const customSetup: Extension = (() => [
     ...foldKeymap,
     ...completionKeymap,
     ...lintKeymap,
-  ]),
+  ] as any),
 ])();

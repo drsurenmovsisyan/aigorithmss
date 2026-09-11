@@ -4,7 +4,7 @@ import { firecrawl } from "@/lib/firecrawl";
 
 const paramsSchema = z.object({
   urls: z
-    .array(z.url("Invalid URL format"))
+    .array(z.string().url("Invalid URL format"))
     .min(1, "Provide at least one URL to scrape"),
 });
 
@@ -30,11 +30,11 @@ export const createScrapeUrlsTool = () => {
 
           for (const url of urls) {
             try {
-              const result = await firecrawl.scrape(url, {
+              const result = await firecrawl.scrapeUrl(url, {
                 formats: ["markdown"],
               });
 
-              if (result.markdown) {
+              if (result.success && result.markdown) {
                 results.push({
                   url,
                   content: result.markdown,

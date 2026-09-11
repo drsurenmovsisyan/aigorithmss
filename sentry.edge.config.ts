@@ -16,9 +16,9 @@ Sentry.init({
     // https://docs.sentry.io/platforms/javascript/guides/nextjs/configuration/options/#dataCollection
     // userInfo: false,
     // httpBodies: [],
-    integrations: [
-      Sentry.vercelAIIntegration,
-      Sentry.consoleLoggingIntegration({ levels: ["log", "warn", "error"] }),
-    ],
   },
+  integrations: [
+    Sentry.vercelAIIntegration,
+    Sentry.consoleLoggingIntegration({ levels: ["log", "warn", "error"] }),
+  ],
 });
