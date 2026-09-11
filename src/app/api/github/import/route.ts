@@ -8,7 +8,7 @@ import { inngest } from "@/inngest/client";
 import { api } from "../../../../../convex/_generated/api";
 
 const requestSchema = z.object({
-  url: z.string().url(),
+  url: z.url(),
 });
 
 function parseGitHubUrl(url: string) {
@@ -21,67 +21,67 @@ function parseGitHubUrl(url: string) {
 }
 
 export async function POST(request: Request) {
-  try {
-    const { userId } = await auth();
+  const { userId, has } = await auth();
 
-    if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+  if (!userId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
-    const body = await request.json();
-    const { url } = requestSchema.parse(body);
+  const hasPro = has({ plan: "pro" });
 
-    const { owner, repo } = parseGitHubUrl(url);
+  if (!hasPro) {
+    return NextResponse.json({ error: "Pro plan required" }, { status: 403 });
+  }
 
-    const client = await clerkClient();
-    const tokens = await client.users.getUserOauthAccessToken(
-      userId,
-      "github"
-    );
-    const githubToken = tokens.data[0]?.token;
+  const body = await request.json();
+  const { url } = requestSchema.parse(body);
 
-    if (!githubToken) {
-      return NextResponse.json(
-        { error: "GitHub not connected. Please reconnect your GitHub account." },
-        { status: 400 }
-      );
-    }
+  const { owner, repo } = parseGitHubUrl(url);
+  // https://github.com/AntonioErdeljac/cursor-dev
+  // { owner: "AntonioErdeljac", repo: "cursor-dev" }
 
-    const internalKey = process.env.AIGORITHM_CONVEX_INTERNAL_KEY;
+  const client = await clerkClient();
+  const tokens = await client.users.getUserOauthAccessToken(
+    userId,
+    "github"
+  );
+  const githubToken = tokens.data[0]?.token;
 
-    if (!internalKey) {
-      return NextResponse.json(
-        { error: "Server configuration error" },
-        { status: 500 }
-      );
-    }
-
-    const projectId = await convex.mutation(api.system.createProject, {
-      internalKey,
-      name: repo,
-      ownerId: userId,
-    });
-
-    const event = await inngest.send({
-      name: "github/import.repo",
-      data: {
-        owner,
-        repo,
-        projectId,
-        githubToken,
-      },
-    });
-
-    return NextResponse.json({ 
-      success: true, 
-      projectId, 
-      eventId: event.ids[0]
-    });
-  } catch (error) {
-    console.error("[github/import] Unhandled error:", error);
+  if (!githubToken) {
     return NextResponse.json(
-      { error: "Unable to import repository. Please try again." },
+      { error: "GitHub not connected. Please reconnect your GitHub account." },
+      { status: 400 }
+    );
+  }
+
+  const internalKey = process.env.AIGORITHM_CONVEX_INTERNAL_KEY;
+
+  if (!internalKey) {
+    return NextResponse.json(
+      { error: "Server configuration error" },
       { status: 500 }
     );
   }
+
+  const projectId = await convex.mutation(api.system.createProject, {
+    internalKey,
+    name: repo,
+    ownerId: userId,
+  });
+
+  const event = await inngest.send({
+    name: "github/import.repo",
+    data: {
+      owner,
+      repo,
+      projectId,
+      githubToken,
+    },
+  });
+
+  return NextResponse.json({ 
+    success: true, 
+    projectId, 
+    eventId: event.ids[0]
+  });
 };
