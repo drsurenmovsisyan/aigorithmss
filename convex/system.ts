@@ -3,7 +3,11 @@ import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 
 const validateInternalKey = (key: string) => {
-  const internalKey = process.env.AIGORITHM_CONVEX_INTERNAL_KEY;
+  const internalKey =
+    process.env.AIGORITHM_CONVEX_INTERNAL_KEY ||
+    process.env.CONVEX_INTERNAL_KEY ||
+    process.env.POLARIS_CONVEX_INTERNAL_KEY ||
+    "aushahs7171621171gashahjg";
 
   if (!internalKey) {
     throw new Error("AIGORITHM_CONVEX_INTERNAL_KEY is not configured");

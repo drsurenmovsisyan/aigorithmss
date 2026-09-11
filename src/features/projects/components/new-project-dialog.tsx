@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import ky from "ky";
+import ky, { HTTPError } from "ky";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 
@@ -54,8 +54,17 @@ export const NewProjectDialog = ({
       onOpenChange(false);
       setInput("");
       router.push(`/projects/${projectId}`);
-    } catch {
-      toast.error("Unable to create project");
+    } catch (error) {
+      if (error instanceof HTTPError) {
+        try {
+          const body = await error.response.json<{ error?: string }>();
+          if (body?.error) {
+            toast.error(body.error);
+            return;
+          }
+        } catch {}
+      }
+      toast.error(error instanceof Error ? error.message : "Unable to create project");
     } finally {
       setIsSubmitting(false);
     }

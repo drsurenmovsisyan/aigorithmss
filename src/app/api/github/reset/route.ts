@@ -3,7 +3,7 @@ import { z } from "zod";
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 
-import { convex } from "@/lib/convex-client";
+import { convex, getInternalKey } from "@/lib/convex-client";
 
 import { api } from "../../../../../convex/_generated/api";
 import { Id } from "../../../../../convex/_generated/dataModel";
@@ -22,7 +22,7 @@ export async function POST(request: Request) {
   const body = await request.json();
   const { projectId } = requestSchema.parse(body);
 
-  const internalKey = process.env.AIGORITHM_CONVEX_INTERNAL_KEY;
+  const internalKey = getInternalKey();
 
   if (!internalKey) {
     return NextResponse.json(

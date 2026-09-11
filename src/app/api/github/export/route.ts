@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { auth, clerkClient } from "@clerk/nextjs/server";
 
 import { inngest } from "@/inngest/client";
+import { getInternalKey } from "@/lib/convex-client";
 
 import { Id } from "../../../../../convex/_generated/dataModel";
 
@@ -40,7 +41,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const internalKey = process.env.AIGORITHM_CONVEX_INTERNAL_KEY;
+  const internalKey = getInternalKey();
 
   if (!internalKey) {
     return NextResponse.json(

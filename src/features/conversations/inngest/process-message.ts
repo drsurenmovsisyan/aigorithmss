@@ -3,7 +3,7 @@ import { createAgent, anthropic, createNetwork } from '@inngest/agent-kit';
 import { inngest } from "@/inngest/client";
 import { Id } from "../../../../convex/_generated/dataModel";
 import { NonRetriableError } from "inngest";
-import { convex } from "@/lib/convex-client";
+import { convex, getInternalKey } from "@/lib/convex-client";
 import { api } from "../../../../convex/_generated/api";
 import { 
   CODING_AGENT_SYSTEM_PROMPT, 
@@ -37,10 +37,7 @@ export const processMessage = inngest.createFunction(
     ],
     onFailure: async ({ event, step }) => {
       const { messageId } = event.data.event.data as MessageEvent;
-      const internalKey =
-        process.env.CONVEX_INTERNAL_KEY ||
-        process.env.AIGORITHM_CONVEX_INTERNAL_KEY ||
-        process.env.AIGORITHM_CONVEX_INTERNAL_KEY;
+      const internalKey = getInternalKey();
 
       // Update the message with error content
       if (internalKey) {
@@ -66,13 +63,10 @@ export const processMessage = inngest.createFunction(
       message
     } = event.data as MessageEvent;
 
-    const internalKey =
-      process.env.CONVEX_INTERNAL_KEY ||
-      process.env.AIGORITHM_CONVEX_INTERNAL_KEY ||
-      process.env.AIGORITHM_CONVEX_INTERNAL_KEY; 
+    const internalKey = getInternalKey();
 
     if (!internalKey) {
-      throw new NonRetriableError("CONVEX_INTERNAL_KEY is not configured");
+      throw new NonRetriableError("Internal key is not configured");
     }
 
     // TODO: Check if this is needed

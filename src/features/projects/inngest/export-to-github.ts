@@ -2,7 +2,7 @@ import ky from "ky";
 import { Octokit } from "octokit";
 import { NonRetriableError } from "inngest";
 
-import { convex } from "@/lib/convex-client";
+import { convex, getInternalKey } from "@/lib/convex-client";
 import { inngest } from "@/inngest/client";
 
 import { api } from "../../../../convex/_generated/api";
@@ -30,7 +30,7 @@ export const exportToGithub = inngest.createFunction(
       },
     ],
     onFailure: async ({ event, step }) => {
-      const internalKey = process.env.AIGORITHM_CONVEX_INTERNAL_KEY;
+      const internalKey = getInternalKey();
       if (!internalKey) return;
 
       const { projectId } = event.data.event.data as ExportToGithubEvent;
@@ -56,9 +56,9 @@ export const exportToGithub = inngest.createFunction(
       githubToken,
     } = event.data as ExportToGithubEvent;
 
-    const internalKey = process.env.AIGORITHM_CONVEX_INTERNAL_KEY;
+    const internalKey = getInternalKey();
     if (!internalKey) {
-      throw new NonRetriableError("AIGORITHM_CONVEX_INTERNAL_KEY is not configured");
+      throw new NonRetriableError("Internal key is not configured");
     };
 
     // Set status to exporting

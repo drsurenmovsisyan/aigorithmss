@@ -3,7 +3,7 @@ import { Octokit } from "octokit";
 import { isBinaryFile } from "isbinaryfile";
 import { NonRetriableError } from "inngest";
 
-import { convex } from "@/lib/convex-client";
+import { convex, getInternalKey } from "@/lib/convex-client";
 import { inngest } from "@/inngest/client";
 
 import { api } from "../../../../convex/_generated/api";
@@ -20,7 +20,7 @@ export const importGithubRepo = inngest.createFunction(
   {
     id: "import-github-repo",
     onFailure: async ({ event, step }) => {
-      const internalKey = process.env.AIGORITHM_CONVEX_INTERNAL_KEY;
+      const internalKey = getInternalKey();
       if (!internalKey) return;
 
       const { projectId } = event.data.event.data as ImportGithubRepoEvent;
@@ -39,9 +39,9 @@ export const importGithubRepo = inngest.createFunction(
     const { owner, repo, projectId, githubToken } =
       event.data as ImportGithubRepoEvent;
 
-    const internalKey = process.env.AIGORITHM_CONVEX_INTERNAL_KEY;
+    const internalKey = getInternalKey();
     if (!internalKey) {
-      throw new NonRetriableError("AIGORITHM_CONVEX_INTERNAL_KEY is not configured");
+      throw new NonRetriableError("Internal key is not configured");
     };
 
     const octokit = new Octokit({ auth: githubToken });

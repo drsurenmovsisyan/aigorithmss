@@ -2,13 +2,13 @@ import { z } from "zod";
 import { NextResponse } from "next/server";
 import { auth, clerkClient } from "@clerk/nextjs/server";
 
-import { convex } from "@/lib/convex-client";
+import { convex, getInternalKey } from "@/lib/convex-client";
 import { inngest } from "@/inngest/client";
 
 import { api } from "../../../../../convex/_generated/api";
 
 const requestSchema = z.object({
-  url: z.url(),
+  url: z.string().url(),
 });
 
 function parseGitHubUrl(url: string) {
@@ -54,7 +54,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const internalKey = process.env.AIGORITHM_CONVEX_INTERNAL_KEY;
+  const internalKey = getInternalKey();
 
   if (!internalKey) {
     return NextResponse.json(
