@@ -20,7 +20,7 @@ import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Id } from "../../../../convex/_generated/dataModel";
 
 const formSchema = z.object({
-  url: z.string().url("Please enter a valid URL"),
+  url: z.url("Please enter a valid URL"),
 });
 
 interface ImportGithubDialogProps {
@@ -61,20 +61,27 @@ export const ImportGithubDialog = ({
         router.push(`/projects/${projectId}`);
       } catch (error) {
         if (error instanceof HTTPError) {
-          try {
-            const body = await error.response.json<{ error: string }>();
-            if (body?.error?.includes("GitHub not connected")) {
-              toast.error("GitHub account not connected", {
-                action: {
-                  label: "Connect",
-                  onClick: () => openUserProfile(),
-                },
-              });
-              onOpenChange(false);
-              return;
-            }
-          } catch {
-            // response body was not parseable JSON — fall through to generic error
+          const body = await error.response.json<{ error: string }>();
+          if (body.error?.includes("Pro plan required")) {
+            toast.error("Upgrade to import repositories", {
+              action: {
+                label: "Upgrade",
+                onClick: () => openUserProfile(),
+              },
+            });
+            onOpenChange(false);
+            return;
+          }
+
+          if (body.error?.includes("GitHub not connected")) {
+            toast.error("GitHub account not connected", {
+              action: {
+                label: "Connect",
+                onClick: () => openUserProfile(),
+              },
+            });
+            onOpenChange(false);
+            return;
           }
         }
         toast.error("Unable to import repository. Please check the URL and try again");

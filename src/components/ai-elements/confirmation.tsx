@@ -4,8 +4,12 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { ToolUIPart } from "ai";
-import type { ComponentProps, ReactNode } from "react";
-import { createContext, useContext, useMemo } from "react";
+import {
+  type ComponentProps,
+  createContext,
+  type ReactNode,
+  useContext,
+} from "react";
 
 type ToolUIPartApproval =
   | {
@@ -35,10 +39,10 @@ type ToolUIPartApproval =
     }
   | undefined;
 
-interface ConfirmationContextValue {
+type ConfirmationContextValue = {
   approval: ToolUIPartApproval;
   state: ToolUIPart["state"];
-}
+};
 
 const ConfirmationContext = createContext<ConfirmationContextValue | null>(
   null
@@ -65,14 +69,12 @@ export const Confirmation = ({
   state,
   ...props
 }: ConfirmationProps) => {
-  const contextValue = useMemo(() => ({ approval, state }), [approval, state]);
-
   if (!approval || state === "input-streaming" || state === "input-available") {
     return null;
   }
 
   return (
-    <ConfirmationContext.Provider value={contextValue}>
+    <ConfirmationContext.Provider value={{ approval, state }}>
       <Alert className={cn("flex flex-col gap-2", className)} {...props} />
     </ConfirmationContext.Provider>
   );
@@ -87,9 +89,9 @@ export const ConfirmationTitle = ({
   <AlertDescription className={cn("inline", className)} {...props} />
 );
 
-export interface ConfirmationRequestProps {
+export type ConfirmationRequestProps = {
   children?: ReactNode;
-}
+};
 
 export const ConfirmationRequest = ({ children }: ConfirmationRequestProps) => {
   const { state } = useConfirmation();
@@ -102,9 +104,9 @@ export const ConfirmationRequest = ({ children }: ConfirmationRequestProps) => {
   return children;
 };
 
-export interface ConfirmationAcceptedProps {
+export type ConfirmationAcceptedProps = {
   children?: ReactNode;
-}
+};
 
 export const ConfirmationAccepted = ({
   children,
@@ -124,9 +126,9 @@ export const ConfirmationAccepted = ({
   return children;
 };
 
-export interface ConfirmationRejectedProps {
+export type ConfirmationRejectedProps = {
   children?: ReactNode;
-}
+};
 
 export const ConfirmationRejected = ({
   children,
