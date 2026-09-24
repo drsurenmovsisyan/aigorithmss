@@ -123,7 +123,7 @@ export const processMessage = inngest.createFunction(
           model: modelId,
           baseUrl: "https://openrouter.ai/api/v1/",
           apiKey: process.env.OPENROUTER_API_KEY,
-          defaultParameters: { temperature: 0, max_tokens: 50 },
+          defaultParameters: { temperature: 0, max_completion_tokens: 50 },
         }),
        });
 
@@ -163,7 +163,7 @@ export const processMessage = inngest.createFunction(
         model: modelId,
         baseUrl: "https://openrouter.ai/api/v1/",
         apiKey: process.env.OPENROUTER_API_KEY,
-        defaultParameters: { temperature: 0.3, max_tokens: 16000 }
+        defaultParameters: { temperature: 0.3, max_completion_tokens: 16000 }
        }),
        tools: [
         createListFilesTool({ internalKey, projectId }),
