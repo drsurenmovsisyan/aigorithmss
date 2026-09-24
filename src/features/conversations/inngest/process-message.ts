@@ -1,4 +1,6 @@
-import { createAgent, createNetwork } from '@inngest/agent-kit';
+import { generateText, tool, stepCountIs } from "ai";
+import { createOpenRouter } from "@openrouter/ai-sdk-provider";
+import { z } from "zod";
 
 import { inngest } from "@/inngest/client";
 import { Id } from "../../../../convex/_generated/dataModel";
@@ -10,14 +12,116 @@ import {
   TITLE_GENERATOR_SYSTEM_PROMPT
 } from "./constants";
 import { DEFAULT_CONVERSATION_TITLE } from "../constants";
-import { createReadFilesTool } from './tools/read-files';
-import { createListFilesTool } from './tools/list-files';
-import { createUpdateFileTool } from './tools/update-file';
-import { createCreateFilesTool } from './tools/create-files';
-import { createCreateFolderTool } from './tools/create-folder';
-import { createRenameFileTool } from './tools/rename-file';
-import { createDeleteFilesTool } from './tools/delete-files';
-import { createScrapeUrlsTool } from './tools/scrape-urls';
+
+// ─── Tool handlers (direct Convex calls, no agent-kit dependency) ────────────
+
+async function listFiles(projectId: Id<"projects">, internalKey: string) {
+  const files = await convex.query(api.system.getProjectFiles, {
+    internalKey,
+    projectId,
+  });
+  const sorted = files.sort((a, b) => {
+    if (a.type !== b.type) return a.type === "folder" ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+  return JSON.stringify(sorted.map((f) => ({
+    id: f._id,
+    name: f.name,
+    type: f.type,
+    parentId: f.parentId ?? null,
+  })));
+}
+
+async function readFile(fileId: string, internalKey: string) {
+  const file = await convex.query(api.system.getFileById, {
+    internalKey,
+    fileId: fileId as Id<"files">,
+  });
+  if (!file) return `Error: File "${fileId}" not found.`;
+  if (file.type === "folder") return `Error: "${fileId}" is a folder.`;
+  return JSON.stringify({ name: file.name, content: file.content ?? "" });
+}
+
+async function updateFile(fileId: string, content: string, internalKey: string) {
+  const file = await convex.query(api.system.getFileById, {
+    internalKey,
+    fileId: fileId as Id<"files">,
+  });
+  if (!file) return `Error: File "${fileId}" not found. Use listFiles first.`;
+  if (file.type === "folder") return `Error: "${fileId}" is a folder.`;
+  await convex.mutation(api.system.updateFile, {
+    internalKey,
+    fileId: fileId as Id<"files">,
+    content,
+  });
+  return `File "${file.name}" updated successfully.`;
+}
+
+async function createFile(
+  name: string,
+  content: string,
+  parentId: string | null,
+  projectId: Id<"projects">,
+  internalKey: string
+) {
+  await convex.mutation(api.system.createFile, {
+    internalKey,
+    projectId,
+    name,
+    content,
+    parentId: (parentId ?? undefined) as Id<"files"> | undefined,
+  });
+  return `File "${name}" created successfully.`;
+}
+
+async function createFolder(
+  name: string,
+  parentId: string | null,
+  projectId: Id<"projects">,
+  internalKey: string
+) {
+  await convex.mutation(api.system.createFolder, {
+    internalKey,
+    projectId,
+    name,
+    parentId: (parentId ?? undefined) as Id<"files"> | undefined,
+  });
+  return `Folder "${name}" created successfully.`;
+}
+
+async function renameFile(fileId: string, newName: string, internalKey: string) {
+  await convex.mutation(api.system.renameFile, {
+    internalKey,
+    fileId: fileId as Id<"files">,
+    newName,
+  });
+  return `Renamed to "${newName}" successfully.`;
+}
+
+async function deleteFiles(fileIds: string[], internalKey: string) {
+  for (const fileId of fileIds) {
+    await convex.mutation(api.system.deleteFile, {
+      internalKey,
+      fileId: fileId as Id<"files">,
+    });
+  }
+  return `Deleted ${fileIds.length} item(s) successfully.`;
+}
+
+async function scrapeUrl(url: string) {
+  try {
+    const { firecrawl } = await import("@/lib/firecrawl");
+    const result = await firecrawl.scrapeUrl(url, { formats: ["markdown"] });
+    if (result.success && result.markdown) {
+      return result.markdown.slice(0, 8000);
+    }
+    return `Could not scrape ${url}`;
+  } catch {
+    return `Error scraping ${url}`;
+  }
+}
+
+// ─── Main Inngest function ───────────────────────────────────────────────────
 
 interface MessageEvent {
   messageId: Id<"messages">;
@@ -25,7 +129,7 @@ interface MessageEvent {
   projectId: Id<"projects">;
   message: string;
   modelId: string;
-};
+}
 
 export const processMessage = inngest.createFunction(
   {
@@ -40,7 +144,6 @@ export const processMessage = inngest.createFunction(
       const { messageId } = event.data.event.data as MessageEvent;
       const internalKey = getInternalKey();
 
-      // Update the message with error content
       if (internalKey) {
         await step.run("update-message-on-failure", async () => {
           await convex.mutation(api.system.updateMessageContent, {
@@ -53,9 +156,7 @@ export const processMessage = inngest.createFunction(
       }
     }
   },
-  {
-    event: "message/sent",
-  },
+  { event: "message/sent" },
   async ({ event, step }) => {
     const { 
       messageId, 
@@ -66,15 +167,13 @@ export const processMessage = inngest.createFunction(
     } = event.data as MessageEvent;
 
     const internalKey = getInternalKey();
-
     if (!internalKey) {
       throw new NonRetriableError("Internal key is not configured");
     }
 
-    // TODO: Check if this is needed
     await step.sleep("wait-for-db-sync", "1s");
 
-    // Get conversation for title generation check
+    // ── Fetch conversation & recent messages ──
     const conversation = await step.run("get-conversation", async () => {
       return await convex.query(api.system.getConversationById, {
         internalKey,
@@ -86,7 +185,6 @@ export const processMessage = inngest.createFunction(
       throw new NonRetriableError("Conversation not found");
     }
 
-    // Fetch recent messages for conversation context
     const recentMessages = await step.run("get-recent-messages", async () => {
       return await convex.query(api.system.getRecentMessages, {
         internalKey,
@@ -95,142 +193,139 @@ export const processMessage = inngest.createFunction(
       });
     });
 
-    // Build system prompt with conversation history (exclude the current processing message)
+    // ── Build system prompt with history ──
     let systemPrompt = CODING_AGENT_SYSTEM_PROMPT;
-
-    // Filter out the current processing message and empty messages
     const contextMessages = recentMessages.filter(
       (msg) => msg._id !== messageId && msg.content.trim() !== ""
     );
-
     if (contextMessages.length > 0) {
       const historyText = contextMessages
         .map((msg) => `${msg.role.toUpperCase()}: ${msg.content}`)
         .join("\n\n");
-
-      systemPrompt += `\n\n## Previous Conversation (for context only - do NOT repeat these responses):\n${historyText}\n\n## Current Request:\nRespond ONLY to the user's new message below. Do not repeat or reference your previous responses.`;
+      systemPrompt += `\n\n## Previous Conversation (for context only):\n${historyText}\n\n## Current Request:\nRespond ONLY to the user's new message below.`;
     }
 
-    // Generate conversation title if it's still the default
+    // ── OpenRouter client ──
+    const openrouter = createOpenRouter({
+      apiKey: process.env.OPENROUTER_API_KEY,
+    });
+
+    // ── Generate title if needed ──
     const shouldGenerateTitle =
       conversation.title === DEFAULT_CONVERSATION_TITLE;
 
-    // Custom OpenRouter adapter that removes parallel_tool_calls (causes 400 on Anthropic via OpenRouter)
-    const createOpenRouterModel = (opts: { temperature: number; max_tokens: number }) => ({
-      url: "https://openrouter.ai/api/v1/chat/completions",
-      authKey: process.env.OPENROUTER_API_KEY ?? "",
-      format: "openai-chat" as const,
-      options: { model: modelId },
-      onCall(_modelCopy: Record<string, unknown>, body: Record<string, unknown>) {
-        delete body.parallel_tool_calls;
-        Object.assign(body, opts);
-        body.model = modelId;
-      }
-    });
-
     if (shouldGenerateTitle) {
-       const titleAgent = createAgent({
-        name: "title-generator",
-        system: TITLE_GENERATOR_SYSTEM_PROMPT,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        model: createOpenRouterModel({ temperature: 0, max_tokens: 50 }) as any,
-       });
+      const titleResult = await step.run("generate-title", async () => {
+        const result = await generateText({
+          model: openrouter(modelId),
+          system: TITLE_GENERATOR_SYSTEM_PROMPT,
+          prompt: message,
+          maxOutputTokens: 50,
+          temperature: 0,
+        });
+        return result.text.trim();
+      });
 
-       const { output } = await titleAgent.run(message, { step });
-
-       const textMessage = output.find(
-        (m) => m.type === "text" && m.role === "assistant"
-      );
-
-      if (textMessage?.type === "text") {
-         const title = 
-          typeof textMessage.content === "string"
-            ? textMessage.content.trim()
-            : textMessage.content
-              .map((c) => c.text)
-              .join("")
-              .trim();
-
-        if (title) {
-          await step.run("update-conversation-title", async () => {
-            await convex.mutation(api.system.updateConversationTitle, {
-              internalKey,
-              conversationId,
-              title,
-            });
+      if (titleResult) {
+        await step.run("update-conversation-title", async () => {
+          await convex.mutation(api.system.updateConversationTitle, {
+            internalKey,
+            conversationId,
+            title: titleResult,
           });
-        }
+        });
       }
     }
 
-    // Create the coding agent with file tools
-    const codingAgent = createAgent({
-      name: "aigorithm",
-      description: "An expert AI coding assistant",
-      system: systemPrompt,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      model: createOpenRouterModel({ temperature: 0.3, max_tokens: 16000 }) as any,
-       tools: [
-        createListFilesTool({ internalKey, projectId }),
-        createReadFilesTool({ internalKey }),
-        createUpdateFileTool({ internalKey }),
-        createCreateFilesTool({ projectId, internalKey }),
-        createCreateFolderTool({ projectId, internalKey }),
-        createRenameFileTool({ internalKey }),
-        createDeleteFilesTool({ internalKey }),
-        createScrapeUrlsTool(),
-       ],
+    // ── Agentic tool-calling loop ──
+    // Define Vercel AI SDK tools
+    const tools = {
+      listFiles: tool({
+        description: "List all files and folders in the project. Returns names, IDs, types, and parentId. Items with parentId: null are at root level.",
+        inputSchema: z.object({}),
+        execute: async () => listFiles(projectId, internalKey),
+      }),
+      readFile: tool({
+        description: "Read the content of a file by its ID.",
+        inputSchema: z.object({
+          fileId: z.string().describe("The ID of the file to read"),
+        }),
+        execute: async ({ fileId }: { fileId: string }) => readFile(fileId, internalKey),
+      }),
+      updateFile: tool({
+        description: "Update the content of an existing file.",
+        inputSchema: z.object({
+          fileId: z.string().describe("The ID of the file to update"),
+          content: z.string().describe("The new full content for the file"),
+        }),
+        execute: async ({ fileId, content }: { fileId: string; content: string }) => updateFile(fileId, content, internalKey),
+      }),
+      createFile: tool({
+        description: "Create a new file in the project.",
+        inputSchema: z.object({
+          name: z.string().describe("File name including extension (e.g. index.html)"),
+          content: z.string().describe("Initial content of the file"),
+          parentId: z.string().nullable().optional().describe("Parent folder ID, or null/omitted for root"),
+        }),
+        execute: async ({ name, content, parentId }: { name: string; content: string; parentId?: string | null }) =>
+          createFile(name, content, parentId ?? null, projectId, internalKey),
+      }),
+      createFolder: tool({
+        description: "Create a new folder in the project.",
+        inputSchema: z.object({
+          name: z.string().describe("Folder name"),
+          parentId: z.string().nullable().optional().describe("Parent folder ID, or null/omitted for root"),
+        }),
+        execute: async ({ name, parentId }: { name: string; parentId?: string | null }) =>
+          createFolder(name, parentId ?? null, projectId, internalKey),
+      }),
+      renameFile: tool({
+        description: "Rename a file or folder.",
+        inputSchema: z.object({
+          fileId: z.string().describe("The ID of the file or folder to rename"),
+          newName: z.string().describe("The new name"),
+        }),
+        execute: async ({ fileId, newName }: { fileId: string; newName: string }) => renameFile(fileId, newName, internalKey),
+      }),
+      deleteFiles: tool({
+        description: "Delete one or more files or folders by their IDs.",
+        inputSchema: z.object({
+          fileIds: z.array(z.string()).describe("Array of file/folder IDs to delete"),
+        }),
+        execute: async ({ fileIds }: { fileIds: string[] }) => deleteFiles(fileIds, internalKey),
+      }),
+      scrapeUrl: tool({
+        description: "Scrape the content of a URL and return it as markdown. Useful for fetching documentation or reference material.",
+        inputSchema: z.object({
+          url: z.string().describe("The URL to scrape"),
+        }),
+        execute: async ({ url }: { url: string }) => scrapeUrl(url),
+      }),
+    };
+
+    // Run the agentic loop inside a single step.run (durable, retryable)
+    const assistantResponse = await step.run("run-agent", async () => {
+      const result = await generateText({
+        model: openrouter(modelId),
+        system: systemPrompt,
+        prompt: message,
+        tools,
+        stopWhen: stepCountIs(20),
+        temperature: 0.3,
+        maxOutputTokens: 16000,
+      });
+
+      // Return the final text response
+      return result.text || "I processed your request. Let me know if you need anything else!";
     });
 
-    // Create network with single agent
-    const network = createNetwork({
-      name: "aigorithm-network",
-      agents: [codingAgent],
-      maxIter: 20,
-      router: ({ network }) => {
-        const lastResult = network.state.results.at(-1);
-        const hasTextResponse = lastResult?.output.some(
-          (m) => m.type === "text" && m.role === "assistant"
-        );
-        const hasToolCalls = lastResult?.output.some(
-          (m) => m.type === "tool_call"
-        );
-
-        // Anthropic outputs text AND tool calls together
-        // Only stop if there's text WITHOUT tool calls (final response)
-        if (hasTextResponse && !hasToolCalls) {
-          return undefined;
-        }
-        return codingAgent;
-      }
-    });
-
-    // Run the agent
-    const result = await network.run(message);
-
-    // Extract the assistant's text response from the last agent result
-    const lastResult = result.state.results.at(-1);
-    const textMessage = lastResult?.output.find(
-      (m) => m.type === "text" && m.role === "assistant"
-    );
-
-    let assistantResponse =
-      "I processed your request. Let me know if you need anything else!";
-
-    if (textMessage?.type === "text") {
-      assistantResponse =
-        typeof textMessage.content === "string"
-          ? textMessage.content
-          : textMessage.content.map((c) => c.text).join("");
-    }
-
-    // Update the assistant message with the response (this also sets status to completed)
+    // ── Save the assistant response ──
     await step.run("update-assistant-message", async () => {
       await convex.mutation(api.system.updateMessageContent, {
         internalKey,
         messageId,
         content: assistantResponse,
-      })
+      });
     });
 
     return { success: true, messageId, conversationId };
