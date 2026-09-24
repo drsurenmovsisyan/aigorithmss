@@ -170,6 +170,11 @@ export const processMessage = inngest.createFunction(
       modelId,
     } = event.data as MessageEvent;
 
+    const effectiveModelId =
+      modelId && typeof modelId === "string" && modelId.trim()
+        ? modelId.trim()
+        : "anthropic/claude-3-haiku";
+
     const internalKey = getInternalKey();
     if (!internalKey) {
       throw new NonRetriableError("Internal key is not configured");
@@ -225,7 +230,7 @@ export const processMessage = inngest.createFunction(
     if (shouldGenerateTitle) {
       const titleResult = await step.run("generate-title", async () => {
         const result = await generateText({
-          model: openrouter(modelId),
+          model: openrouter(effectiveModelId),
           system: TITLE_GENERATOR_SYSTEM_PROMPT,
           prompt: message,
           maxOutputTokens: 50,
@@ -314,7 +319,7 @@ export const processMessage = inngest.createFunction(
     // Run the agentic loop inside a single step.run (durable, retryable)
     const assistantResponse = await step.run("run-agent", async () => {
       const result = await generateText({
-        model: openrouter(modelId),
+        model: openrouter(effectiveModelId),
         system: systemPrompt,
         prompt: message,
         tools,

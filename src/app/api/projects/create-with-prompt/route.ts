@@ -17,6 +17,7 @@ import { api } from "../../../../../convex/_generated/api";
 
 const requestSchema = z.object({
   prompt: z.string().min(1),
+  modelId: z.string().optional(),
 });
 
 export async function POST(request: Request) {
@@ -37,7 +38,7 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { prompt } = requestSchema.parse(body);
+    const { prompt, modelId } = requestSchema.parse(body);
 
     // Generate a random project name
     const projectName = uniqueNamesGenerator({
@@ -88,6 +89,7 @@ export async function POST(request: Request) {
           conversationId,
           projectId,
           message: prompt,
+          modelId: modelId || "anthropic/claude-3-haiku",
         },
       });
     } catch (inngestErr) {

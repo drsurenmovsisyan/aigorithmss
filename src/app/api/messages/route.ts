@@ -107,7 +107,7 @@ export async function POST(request: Request) {
       conversationId,
       projectId,
       message,
-      modelId: modelId ?? "anthropic/claude-3.5-haiku",
+      modelId: modelId || "anthropic/claude-3-haiku",
     },
   });
 
