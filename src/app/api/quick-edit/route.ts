@@ -2,7 +2,11 @@ import { z } from "zod";
 import { generateText, Output } from "ai";
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { anthropic } from "@ai-sdk/anthropic";
+import { createOpenRouter } from "@openrouter/ai-sdk-provider";
+
+const openrouter = createOpenRouter({
+  apiKey: process.env.OPENROUTER_API_KEY,
+});
 
 import { firecrawl } from "@/lib/firecrawl";
 
@@ -102,7 +106,7 @@ export async function POST(request: Request) {
       .replace("{documentation}", documentationContext);
 
     const { output } = await generateText({
-      model: anthropic("claude-haiku-4-5"),
+      model: openrouter("anthropic/claude-3.5-haiku"),
       output: Output.object({ schema: quickEditSchema }),
       prompt,
     });

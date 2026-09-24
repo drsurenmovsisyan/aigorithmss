@@ -2,6 +2,7 @@ import ky from "ky";
 import { toast } from "sonner";
 import { useState } from "react";
 import { 
+  BotIcon,
   CopyIcon, 
   HistoryIcon, 
   LoaderIcon, 
@@ -30,6 +31,15 @@ import {
   type PromptInputMessage,
 } from "@/components/ai-elements/prompt-input";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 import {
   useConversation,
@@ -50,6 +60,7 @@ export const ConversationSidebar = ({
   projectId,
 }: ConversationSidebarProps) => {
   const [input, setInput] = useState("");
+  const [modelId, setModelId] = useState("anthropic/claude-3.5-haiku");
   const [
     selectedConversationId,
     setSelectedConversationId,
@@ -120,6 +131,7 @@ export const ConversationSidebar = ({
         json: {
           conversationId,
           message: message.text,
+          modelId,
         },
       });
     } catch {
@@ -214,7 +226,56 @@ export const ConversationSidebar = ({
               />
             </PromptInputBody>
             <PromptInputFooter>
-              <PromptInputTools />
+              <PromptInputTools>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button size="sm" variant="ghost" className="gap-1.5 text-xs text-muted-foreground">
+                      <BotIcon className="size-3.5" />
+                      {modelId.split("/").pop()}
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" side="top" className="w-64">
+                    <DropdownMenuLabel>Select Model</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuGroup>
+                      <DropdownMenuLabel className="text-xs text-muted-foreground font-normal">Anthropic</DropdownMenuLabel>
+                      <DropdownMenuItem onSelect={() => setModelId("anthropic/claude-3.5-haiku")}>claude-3.5-haiku</DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => setModelId("anthropic/claude-3.5-sonnet")}>claude-3.5-sonnet</DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => setModelId("anthropic/claude-3-opus")}>claude-3-opus</DropdownMenuItem>
+                    </DropdownMenuGroup>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuGroup>
+                      <DropdownMenuLabel className="text-xs text-muted-foreground font-normal">OpenAI</DropdownMenuLabel>
+                      <DropdownMenuItem onSelect={() => setModelId("openai/gpt-4o")}>gpt-4o</DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => setModelId("openai/gpt-4o-mini")}>gpt-4o-mini</DropdownMenuItem>
+                    </DropdownMenuGroup>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuGroup>
+                      <DropdownMenuLabel className="text-xs text-muted-foreground font-normal">Google</DropdownMenuLabel>
+                      <DropdownMenuItem onSelect={() => setModelId("google/gemini-2.0-flash-001")}>gemini-2.0-flash</DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => setModelId("google/gemini-2.5-pro-preview")}>gemini-2.5-pro</DropdownMenuItem>
+                    </DropdownMenuGroup>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuGroup>
+                      <DropdownMenuLabel className="text-xs text-muted-foreground font-normal">DeepSeek</DropdownMenuLabel>
+                      <DropdownMenuItem onSelect={() => setModelId("deepseek/deepseek-chat-v3-0324")}>deepseek-chat-v3</DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => setModelId("deepseek/deepseek-r1")}>deepseek-r1</DropdownMenuItem>
+                    </DropdownMenuGroup>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuGroup>
+                      <DropdownMenuLabel className="text-xs text-muted-foreground font-normal">Alibaba</DropdownMenuLabel>
+                      <DropdownMenuItem onSelect={() => setModelId("qwen/qwen-2.5-72b-instruct")}>qwen-2.5-72b</DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => setModelId("qwen/qwen3-235b-a22b")}>qwen3-235b</DropdownMenuItem>
+                    </DropdownMenuGroup>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuGroup>
+                      <DropdownMenuLabel className="text-xs text-muted-foreground font-normal">ZhipuAI</DropdownMenuLabel>
+                      <DropdownMenuItem onSelect={() => setModelId("zhipuai/glm-4-plus")}>glm-4-plus</DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => setModelId("zhipuai/glm-z1-flash:free")}>glm-z1-flash (free)</DropdownMenuItem>
+                    </DropdownMenuGroup>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </PromptInputTools>
               <PromptInputSubmit
                 disabled={isProcessing ? false : !input}
                 status={isProcessing ? "streaming" : undefined}

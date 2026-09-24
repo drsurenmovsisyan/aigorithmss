@@ -1,7 +1,11 @@
 import { generateText } from "ai";
 import { inngest } from "./client";
-import { anthropic } from "@ai-sdk/anthropic";
+import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { firecrawl } from "@/lib/firecrawl";
+
+const openrouter = createOpenRouter({
+  apiKey: process.env.OPENROUTER_API_KEY,
+});
 
 const URL_REGEX = /https?:\/\/[^\s]+/g;
 
@@ -34,7 +38,7 @@ export const demoGenerate = inngest.createFunction(
 
     await step.run("generate-text", async () => {
      return  await generateText({
-    model: anthropic('claude-haiku-4-5'), 
+    model: openrouter('anthropic/claude-3.5-haiku'), 
     prompt: finalPrompt,
     experimental_telemetry: {
       isEnabled: true,

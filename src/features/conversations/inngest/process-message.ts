@@ -1,4 +1,4 @@
-import { createAgent, anthropic, createNetwork } from '@inngest/agent-kit';
+import { createAgent, openai, createNetwork } from '@inngest/agent-kit';
 
 import { inngest } from "@/inngest/client";
 import { Id } from "../../../../convex/_generated/dataModel";
@@ -24,6 +24,7 @@ interface MessageEvent {
   conversationId: Id<"conversations">;
   projectId: Id<"projects">;
   message: string;
+  modelId: string;
 };
 
 export const processMessage = inngest.createFunction(
@@ -60,7 +61,8 @@ export const processMessage = inngest.createFunction(
       messageId, 
       conversationId,
       projectId,
-      message
+      message,
+      modelId,
     } = event.data as MessageEvent;
 
     const internalKey = getInternalKey();
@@ -117,8 +119,10 @@ export const processMessage = inngest.createFunction(
        const titleAgent = createAgent({
         name: "title-generator",
         system: TITLE_GENERATOR_SYSTEM_PROMPT,
-        model: anthropic({
-          model: "claude-haiku-4-5",
+        model: openai({
+          model: modelId,
+          baseUrl: "https://openrouter.ai/api/v1/",
+          apiKey: process.env.OPENROUTER_API_KEY,
           defaultParameters: { temperature: 0, max_tokens: 50 },
         }),
        });
@@ -155,8 +159,10 @@ export const processMessage = inngest.createFunction(
       name: "aigorithm",
       description: "An expert AI coding assistant",
       system: systemPrompt,
-       model: anthropic({
-        model: "claude-haiku-4-5",
+       model: openai({
+        model: modelId,
+        baseUrl: "https://openrouter.ai/api/v1/",
+        apiKey: process.env.OPENROUTER_API_KEY,
         defaultParameters: { temperature: 0.3, max_tokens: 16000 }
        }),
        tools: [

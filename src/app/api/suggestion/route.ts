@@ -2,8 +2,11 @@ import { generateText, Output } from "ai";
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { anthropic } from "@ai-sdk/anthropic";
-// import { google } from "@ai-sdk/google";
+import { createOpenRouter } from "@openrouter/ai-sdk-provider";
+
+const openrouter = createOpenRouter({
+  apiKey: process.env.OPENROUTER_API_KEY,
+});
 
 const suggestionSchema = z.object({
   suggestion: z
@@ -83,7 +86,7 @@ export async function POST(request: Request) {
       .replace("{lineNumber}", lineNumber.toString());
 
     const { output } = await generateText({
-      model: anthropic("claude-haiku-4-5"),
+      model: openrouter("anthropic/claude-3.5-haiku"),
       output: Output.object({ schema: suggestionSchema }),
       prompt,
     });
