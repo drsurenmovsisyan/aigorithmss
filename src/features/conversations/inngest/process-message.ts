@@ -143,14 +143,18 @@ export const processMessage = inngest.createFunction(
     onFailure: async ({ event, step }) => {
       const { messageId } = event.data.event.data as MessageEvent;
       const internalKey = getInternalKey();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const rawError: any = event.data.error;
+      const errorDetail = rawError?.message || (typeof rawError === "string" ? rawError : "An unexpected error occurred");
+
+      console.error("[Inngest] process-message failure:", rawError);
 
       if (internalKey) {
         await step.run("update-message-on-failure", async () => {
           await convex.mutation(api.system.updateMessageContent, {
             internalKey,
             messageId,
-            content:
-              "My apologies, I encountered an error while processing your request. Let me know if you need anything else!",
+            content: `I encountered an error while processing your request:\n\n> ${errorDetail}\n\n*If this mentions an API key or authentication, please verify that \`OPENROUTER_API_KEY\` is added to your Vercel Environment Variables.*`,
           });
         });
       }
@@ -169,6 +173,10 @@ export const processMessage = inngest.createFunction(
     const internalKey = getInternalKey();
     if (!internalKey) {
       throw new NonRetriableError("Internal key is not configured");
+    }
+
+    if (!process.env.OPENROUTER_API_KEY) {
+      throw new NonRetriableError("OPENROUTER_API_KEY is not configured in environment variables");
     }
 
     await step.sleep("wait-for-db-sync", "1s");
