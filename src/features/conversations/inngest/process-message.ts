@@ -1,4 +1,4 @@
-import { createAgent, openai, createNetwork } from '@inngest/agent-kit';
+import { createAgent, createNetwork } from '@inngest/agent-kit';
 
 import { inngest } from "@/inngest/client";
 import { Id } from "../../../../convex/_generated/dataModel";
@@ -115,16 +115,25 @@ export const processMessage = inngest.createFunction(
     const shouldGenerateTitle =
       conversation.title === DEFAULT_CONVERSATION_TITLE;
 
+    // Custom OpenRouter adapter that removes parallel_tool_calls (causes 400 on Anthropic via OpenRouter)
+    const createOpenRouterModel = (opts: { temperature: number; max_tokens: number }) => ({
+      url: "https://openrouter.ai/api/v1/chat/completions",
+      authKey: process.env.OPENROUTER_API_KEY ?? "",
+      format: "openai-chat" as const,
+      options: { model: modelId },
+      onCall(_modelCopy: Record<string, unknown>, body: Record<string, unknown>) {
+        delete body.parallel_tool_calls;
+        Object.assign(body, opts);
+        body.model = modelId;
+      }
+    });
+
     if (shouldGenerateTitle) {
        const titleAgent = createAgent({
         name: "title-generator",
         system: TITLE_GENERATOR_SYSTEM_PROMPT,
-        model: openai({
-          model: modelId,
-          baseUrl: "https://openrouter.ai/api/v1/",
-          apiKey: process.env.OPENROUTER_API_KEY,
-          defaultParameters: { temperature: 0, max_completion_tokens: 50 },
-        }),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        model: createOpenRouterModel({ temperature: 0, max_tokens: 50 }) as any,
        });
 
        const { output } = await titleAgent.run(message, { step });
@@ -159,12 +168,8 @@ export const processMessage = inngest.createFunction(
       name: "aigorithm",
       description: "An expert AI coding assistant",
       system: systemPrompt,
-       model: openai({
-        model: modelId,
-        baseUrl: "https://openrouter.ai/api/v1/",
-        apiKey: process.env.OPENROUTER_API_KEY,
-        defaultParameters: { temperature: 0.3, max_completion_tokens: 16000 }
-       }),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      model: createOpenRouterModel({ temperature: 0.3, max_tokens: 16000 }) as any,
        tools: [
         createListFilesTool({ internalKey, projectId }),
         createReadFilesTool({ internalKey }),

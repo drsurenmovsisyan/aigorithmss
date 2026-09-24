@@ -60,7 +60,7 @@ export const ConversationSidebar = ({
   projectId,
 }: ConversationSidebarProps) => {
   const [input, setInput] = useState("");
-  const [modelId, setModelId] = useState("anthropic/claude-3.5-haiku");
+  const [modelId, setModelId] = useState("anthropic/claude-3-haiku");
   const [
     selectedConversationId,
     setSelectedConversationId,
@@ -239,9 +239,10 @@ export const ConversationSidebar = ({
                     <DropdownMenuSeparator />
                     <DropdownMenuGroup>
                       <DropdownMenuLabel className="text-xs text-muted-foreground font-normal">Anthropic</DropdownMenuLabel>
-                      <DropdownMenuItem onSelect={() => setModelId("anthropic/claude-3.5-haiku")}>claude-3.5-haiku</DropdownMenuItem>
-                      <DropdownMenuItem onSelect={() => setModelId("anthropic/claude-3.5-sonnet")}>claude-3.5-sonnet</DropdownMenuItem>
-                      <DropdownMenuItem onSelect={() => setModelId("anthropic/claude-3-opus")}>claude-3-opus</DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => setModelId("anthropic/claude-3-haiku")}>claude-3-haiku</DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => setModelId("anthropic/claude-haiku-4.5")}>claude-haiku-4.5</DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => setModelId("anthropic/claude-sonnet-4")}>claude-sonnet-4</DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => setModelId("anthropic/claude-sonnet-4.5")}>claude-sonnet-4.5</DropdownMenuItem>
                     </DropdownMenuGroup>
                     <DropdownMenuSeparator />
                     <DropdownMenuGroup>
@@ -252,26 +253,26 @@ export const ConversationSidebar = ({
                     <DropdownMenuSeparator />
                     <DropdownMenuGroup>
                       <DropdownMenuLabel className="text-xs text-muted-foreground font-normal">Google</DropdownMenuLabel>
-                      <DropdownMenuItem onSelect={() => setModelId("google/gemini-2.0-flash-001")}>gemini-2.0-flash</DropdownMenuItem>
-                      <DropdownMenuItem onSelect={() => setModelId("google/gemini-2.5-pro-preview")}>gemini-2.5-pro</DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => setModelId("google/gemini-2.5-flash")}>gemini-2.5-flash</DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => setModelId("google/gemini-2.5-pro")}>gemini-2.5-pro</DropdownMenuItem>
                     </DropdownMenuGroup>
                     <DropdownMenuSeparator />
                     <DropdownMenuGroup>
                       <DropdownMenuLabel className="text-xs text-muted-foreground font-normal">DeepSeek</DropdownMenuLabel>
-                      <DropdownMenuItem onSelect={() => setModelId("deepseek/deepseek-chat-v3-0324")}>deepseek-chat-v3</DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => setModelId("deepseek/deepseek-chat-v3-0324")}>deepseek-v3</DropdownMenuItem>
                       <DropdownMenuItem onSelect={() => setModelId("deepseek/deepseek-r1")}>deepseek-r1</DropdownMenuItem>
                     </DropdownMenuGroup>
                     <DropdownMenuSeparator />
                     <DropdownMenuGroup>
-                      <DropdownMenuLabel className="text-xs text-muted-foreground font-normal">Alibaba</DropdownMenuLabel>
+                      <DropdownMenuLabel className="text-xs text-muted-foreground font-normal">Alibaba Qwen</DropdownMenuLabel>
                       <DropdownMenuItem onSelect={() => setModelId("qwen/qwen-2.5-72b-instruct")}>qwen-2.5-72b</DropdownMenuItem>
                       <DropdownMenuItem onSelect={() => setModelId("qwen/qwen3-235b-a22b")}>qwen3-235b</DropdownMenuItem>
                     </DropdownMenuGroup>
                     <DropdownMenuSeparator />
                     <DropdownMenuGroup>
-                      <DropdownMenuLabel className="text-xs text-muted-foreground font-normal">ZhipuAI</DropdownMenuLabel>
-                      <DropdownMenuItem onSelect={() => setModelId("zhipuai/glm-4-plus")}>glm-4-plus</DropdownMenuItem>
-                      <DropdownMenuItem onSelect={() => setModelId("zhipuai/glm-z1-flash:free")}>glm-z1-flash (free)</DropdownMenuItem>
+                      <DropdownMenuLabel className="text-xs text-muted-foreground font-normal">ZhipuAI (GLM)</DropdownMenuLabel>
+                      <DropdownMenuItem onSelect={() => setModelId("z-ai/glm-4.7")}>glm-4.7</DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => setModelId("z-ai/glm-5.2:free")}>glm-5.2 (free)</DropdownMenuItem>
                     </DropdownMenuGroup>
                   </DropdownMenuContent>
                 </DropdownMenu>

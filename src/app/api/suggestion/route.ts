@@ -86,7 +86,7 @@ export async function POST(request: Request) {
       .replace("{lineNumber}", lineNumber.toString());
 
     const { output } = await generateText({
-      model: openrouter("anthropic/claude-3.5-haiku"),
+      model: openrouter("anthropic/claude-3-haiku"),
       output: Output.object({ schema: suggestionSchema }),
       prompt,
     });

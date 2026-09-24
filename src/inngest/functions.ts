@@ -38,7 +38,7 @@ export const demoGenerate = inngest.createFunction(
 
     await step.run("generate-text", async () => {
      return  await generateText({
-    model: openrouter('anthropic/claude-3.5-haiku'), 
+    model: openrouter('anthropic/claude-3-haiku'), 
     prompt: finalPrompt,
     experimental_telemetry: {
       isEnabled: true,
