@@ -218,7 +218,7 @@ export const ExportPopover = ({ projectId }: ExportPopoverProps) => {
               className="w-full"
               onClick={handleResetExport}
             >
-              Close
+              Export Again
             </Button>
           </div>
         </div>
@@ -252,6 +252,28 @@ export const ExportPopover = ({ projectId }: ExportPopoverProps) => {
               Download as ZIP
             </Button>
           </div>
+        </div>
+      );
+    }
+
+    // Explicitly handle cancelled or completed-without-URL so users aren't silently stuck
+    if (exportStatus === "cancelled" || (exportStatus === "completed" && !exportRepoUrl)) {
+      return (
+        <div className="flex flex-col items-center gap-3 py-3">
+          <XCircleIcon className="size-6 text-amber-500" />
+          <p className="text-sm font-medium">
+            {exportStatus === "cancelled" ? "Export cancelled" : "Export incomplete"}
+          </p>
+          <p className="text-xs text-muted-foreground text-center">
+            Click below to reset and start a fresh export.
+          </p>
+          <Button
+            size="sm"
+            className="w-full mt-2"
+            onClick={handleResetExport}
+          >
+            Start New Export
+          </Button>
         </div>
       );
     }
