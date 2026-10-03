@@ -68,6 +68,7 @@
     "react-icons": "^5.7.0",
     "react-jsx-parser": "^2.4.1",
     "react-resizable-panels": "^4.12.3",
+    "react-textarea-autosize": "^8.5.9",
     "shiki": "^4.4.3",
     "sonner": "^2.0.8",
     "streamdown": "^2.6.0",
