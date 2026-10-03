@@ -297,6 +297,11 @@ export default function Page() {
                 alt: "Ignyte Logo",
               },
               {
+                name: "Agentic AI Ambassador at Swiss Finance + Technology Association",
+                logo: "/sfta.png",
+                alt: "Swiss Finance + Technology Association Logo",
+              },
+              {
                 name: "Startup Mentor and Advisor at MENA's first ever Ripple's XRPL Scale-up Accelerator Programme",
                 logo: "/ripple.png",
                 alt: "Ripple Logo",
