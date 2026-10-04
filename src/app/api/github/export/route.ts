@@ -18,6 +18,7 @@ const requestSchema = z.object({
   repoName: z.string().min(1).max(100),
   visibility: z.enum(["public", "private"]).default("private"),
   description: z.string().max(350).optional(),
+  githubPat: z.string().optional(), // Personal Access Token fallback when OAuth isn't connected
 });
 
 export async function POST(request: Request) {
@@ -29,18 +30,24 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { projectId, repoName, visibility, description } = requestSchema.parse(body);
+    const { projectId, repoName, visibility, description, githubPat } = requestSchema.parse(body);
 
-    const client = await clerkClient();
-    const tokens = await client.users.getUserOauthAccessToken(userId, "github");
-    const githubToken = tokens.data[0]?.token;
+    // Try PAT first (user-provided), then fall back to Clerk OAuth token
+    let githubToken: string | undefined = githubPat?.trim() || undefined;
+
+    if (!githubToken) {
+      const client = await clerkClient();
+      const tokens = await client.users.getUserOauthAccessToken(userId, "github");
+      githubToken = tokens.data[0]?.token;
+    }
 
     if (!githubToken) {
       return NextResponse.json(
-        { error: "GitHub not connected. Please connect your GitHub account in profile settings or download as ZIP." },
+        { error: "GitHub not connected. Please connect your GitHub account or provide a Personal Access Token." },
         { status: 400 }
       );
     }
+
 
     const internalKey = getInternalKey();
 

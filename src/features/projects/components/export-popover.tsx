@@ -62,6 +62,8 @@ export const ExportPopover = ({ projectId }: ExportPopoverProps) => {
   const [open, setOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<"github" | "zip">("github");
   const [isZipping, setIsZipping] = useState(false);
+  const [githubPat, setGithubPat] = useState("");
+  const [showPatInput, setShowPatInput] = useState(false);
   const { openUserProfile } = useClerk();
 
   const exportStatus = project?.exportStatus;
@@ -84,6 +86,7 @@ export const ExportPopover = ({ projectId }: ExportPopoverProps) => {
             repoName: value.repoName,
             visibility: value.visibility,
             description: value.description || undefined,
+            ...(githubPat.trim() ? { githubPat: githubPat.trim() } : {}),
           },
         });
 
@@ -92,13 +95,11 @@ export const ExportPopover = ({ projectId }: ExportPopoverProps) => {
         if (error instanceof HTTPError) {
           try {
             const body = await error.response.json<{ error: string }>();
-            if (body.error?.includes("GitHub not connected")) {
-              toast.error("GitHub account not connected", {
-                description: "Connect GitHub in your profile or download as ZIP.",
-                action: {
-                  label: "Connect",
-                  onClick: () => openUserProfile(),
-                },
+            if (body.error?.includes("GitHub not connected") || body.error?.includes("Personal Access Token")) {
+              // Auto-show PAT input so user can paste their token immediately
+              setShowPatInput(true);
+              toast.error("GitHub not connected", {
+                description: "Paste your GitHub Personal Access Token below to export.",
               });
               return;
             }
@@ -359,6 +360,54 @@ export const ExportPopover = ({ projectId }: ExportPopoverProps) => {
                   Create a new repository and push all project files.
                 </p>
               </div>
+
+              {/* PAT input — shown when OAuth isn't connected or user clicks the link */}
+              {showPatInput ? (
+                <div className="rounded-md border border-amber-200 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-medium text-amber-800 dark:text-amber-300">
+                      GitHub not connected via OAuth
+                    </p>
+                    <button
+                      type="button"
+                      className="text-xs text-muted-foreground underline hover:text-foreground"
+                      onClick={() => { setShowPatInput(false); setGithubPat(""); }}
+                    >
+                      Hide
+                    </button>
+                  </div>
+                  <p className="text-xs text-amber-700 dark:text-amber-400">
+                    Paste a GitHub{" "}
+                    <a
+                      href="https://github.com/settings/tokens/new?scopes=repo&description=Aigorithm+Export"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="underline font-medium"
+                    >
+                      Personal Access Token
+                    </a>{" "}
+                    with <code className="bg-amber-100 dark:bg-amber-900 px-0.5 rounded">repo</code> scope.
+                  </p>
+                  <Input
+                    id="github-pat"
+                    type="password"
+                    value={githubPat}
+                    onChange={(e) => setGithubPat(e.target.value)}
+                    placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+                    className="h-8 text-xs font-mono"
+                    autoComplete="off"
+                  />
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className="text-xs text-muted-foreground underline hover:text-foreground w-full text-left"
+                  onClick={() => setShowPatInput(true)}
+                >
+                  GitHub not connected? Use a Personal Access Token instead
+                </button>
+              )}
+
               <form.Field name="repoName">
                 {(field) => {
                   const isInvalid =
@@ -446,7 +495,7 @@ export const ExportPopover = ({ projectId }: ExportPopoverProps) => {
                     type="submit"
                     size="sm"
                     className="w-full mt-2"
-                    disabled={!canSubmit || isSubmitting}
+                    disabled={!canSubmit || isSubmitting || (showPatInput && !githubPat.trim())}
                   >
                     {isSubmitting ? (
                       <>
