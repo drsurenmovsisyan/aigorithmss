@@ -37,19 +37,56 @@ export async function checkUserAccess(userId: string): Promise<UserAccessResult>
       };
     }
 
-    // 2. Determine credit allowance
+    // 2. Check Clerk Billing subscription for active paid plans (e.g. Pro)
+    let isBillingPaid = false;
+    let isBillingUnlimited = false;
+    let billingPeriodStart: number | undefined = undefined;
+
+    try {
+      if (client.billing && typeof client.billing.getUserBillingSubscription === "function") {
+        const billingSub = await client.billing.getUserBillingSubscription(userId);
+        const activeItems = (billingSub.subscriptionItems ?? []).filter(
+          (item) => item.status === "active"
+        );
+        for (const item of activeItems) {
+          const slug = item.plan?.slug?.toLowerCase();
+          const name = item.plan?.name?.toLowerCase();
+          if (slug === "unlimited" || name === "unlimited") {
+            isBillingUnlimited = true;
+            isBillingPaid = true;
+            billingPeriodStart = item.periodStart ?? undefined;
+          } else if (
+            slug === "pro" ||
+            slug === "paid" ||
+            name === "pro" ||
+            (item.plan?.fee && item.plan.fee.amount > 0) ||
+            (slug && slug !== "free_user" && slug !== "free")
+          ) {
+            isBillingPaid = true;
+            // Track when this billing period started so we only count messages since then
+            billingPeriodStart = item.periodStart ?? undefined;
+          }
+        }
+      }
+    } catch (billingError) {
+      console.warn("Could not check Clerk billing subscription:", billingError);
+    }
+
+    // 3. Determine credit allowance
     // - "unlimited": no limit
     // - custom "credits" number in metadata: overrides default
-    // - "paid": 1 credit
+    // - "paid" / active Clerk billing plan: PAID_TIER_CREDITS
     // - default / "free": 0 credits
-    let maxCredits = FREE_TIER_CREDITS;
-    const isPaid = meta?.plan === "paid" || meta?.plan === "unlimited";
+    const isPaid = meta?.plan === "paid" || meta?.plan === "unlimited" || isBillingPaid;
+    const isUnlimited = meta?.plan === "unlimited" || isBillingUnlimited;
 
-    if (meta?.plan === "unlimited") {
+    let maxCredits = FREE_TIER_CREDITS;
+
+    if (isUnlimited) {
       maxCredits = Infinity;
     } else if (typeof meta?.credits === "number") {
       maxCredits = meta.credits;
-    } else if (meta?.plan === "paid") {
+    } else if (isPaid) {
       maxCredits = PAID_TIER_CREDITS;
     }
 
@@ -59,9 +96,13 @@ export async function checkUserAccess(userId: string): Promise<UserAccessResult>
     }
 
     // 3. Query current message count across all projects
+    // For paid billing users, only count messages from the current billing period (periodStart)
+    // so that pre-upgrade messages don't consume the paid credit allowance
+    const countFrom = isBillingPaid ? billingPeriodStart : undefined;
     const messageCount = await convex.query(api.system.getUserMessageCount, {
       internalKey,
       userId,
+      ...(countFrom !== undefined ? { countFrom } : {}),
     });
 
     if (messageCount >= maxCredits) {

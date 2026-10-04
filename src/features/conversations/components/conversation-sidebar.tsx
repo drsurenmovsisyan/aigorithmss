@@ -51,6 +51,7 @@ import {
 import { Id } from "../../../../convex/_generated/dataModel";
 import { DEFAULT_CONVERSATION_TITLE } from "../constants";
 import { PastConversationsDialog } from "./past-conversations-dialog";
+import { UsageBar } from "@/components/usage-bar";
 
 interface ConversationSidebarProps {
   projectId: Id<"projects">;
@@ -291,6 +292,7 @@ export const ConversationSidebar = ({
             </PromptInputFooter>
           </PromptInput>
         </div>
+        <UsageBar variant="sidebar" />
       </div>
     </>
   );

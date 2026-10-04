@@ -11,6 +11,7 @@ import ky, { HTTPError } from "ky";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { PROJECT_TEMPLATES } from "../../constants";
+import { UsageBar } from "@/components/usage-bar";
 
 export const ProjectForm = () => {
   const router = useRouter();
@@ -130,6 +131,11 @@ export const ProjectForm = () => {
           </button>
         </div>
       </form>
+
+      {/* Credit usage indicator */}
+      <div className="flex justify-center">
+        <UsageBar variant="inline" />
+      </div>
 
       <div className="flex flex-wrap justify-center gap-2 max-w-3xl mx-auto">
         {PROJECT_TEMPLATES.map((template) => (

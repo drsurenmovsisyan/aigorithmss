@@ -636,10 +636,12 @@ export const createProjectWithConversation = mutation({
 });
 
 // Count all user messages sent by a specific Clerk userId (across all their projects)
+// If countFrom is provided (ms timestamp), only count messages created at or after that time
 export const getUserMessageCount = query({
   args: {
     internalKey: v.string(),
     userId: v.string(),
+    countFrom: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     validateInternalKey(args.internalKey);
@@ -668,7 +670,12 @@ export const getUserMessageCount = query({
           )
           .filter((q) => q.eq(q.field("role"), "user"))
           .collect();
-        total += messages.length;
+
+        // If countFrom is set, only count messages created at or after that timestamp
+        const filtered = args.countFrom
+          ? messages.filter((m) => m._creationTime >= args.countFrom!)
+          : messages;
+        total += filtered.length;
       }
     }
 
