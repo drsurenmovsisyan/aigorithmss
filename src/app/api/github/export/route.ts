@@ -71,162 +71,26 @@ export async function POST(request: Request) {
       );
     }
 
-    // Set initial status to exporting in Convex
+    // Set status to exporting immediately — UI shows spinner right away
     await convex.mutation(api.system.updateExportStatus, {
       internalKey,
       projectId: projectId as Id<"projects">,
       status: "exporting",
     });
 
-    // Run export directly in the background so it never hangs or depends on Inngest queues
-    (async () => {
-      try {
-        const octokit = new Octokit({ auth: githubToken });
-
-        // Get authenticated user
-        const { data: user } = await octokit.rest.users.getAuthenticated();
-
-        // Create the new repository with auto_init
-        const { data: repo } = await octokit.rest.repos.createForAuthenticatedUser({
-          name: repoName,
-          description: description || `Exported from Aigorithm`,
-          private: visibility === "private",
-          auto_init: true,
-        });
-
-        // Wait for GitHub to initialize the repo
-        await new Promise((resolve) => setTimeout(resolve, 3000));
-
-        // Get initial commit SHA
-        const { data: ref } = await octokit.rest.git.getRef({
-          owner: user.login,
-          repo: repoName,
-          ref: "heads/main",
-        });
-        const initialCommitSha = ref.object.sha;
-
-        // Fetch all project files
-        const files = (await convex.query(api.system.getProjectFilesWithUrls, {
-          internalKey,
-          projectId: projectId as Id<"projects">,
-        })) as FileWithUrl[];
-
-        // Build file map for hierarchy
-        const fileMap = new Map<Id<"files">, FileWithUrl>();
-        files.forEach((f) => fileMap.set(f._id, f));
-
-        const getFullPath = (file: FileWithUrl): string => {
-          if (!file.parentId) return file.name;
-          const parent = fileMap.get(file.parentId);
-          if (!parent) return file.name;
-          return `${getFullPath(parent)}/${file.name}`;
-        };
-
-        const fileEntries = files.filter((f) => f.type === "file");
-        if (fileEntries.length === 0) {
-          throw new Error("No files in project to export");
-        }
-
-        const treeItems: {
-          path: string;
-          mode: "100644";
-          type: "blob";
-          sha: string;
-        }[] = [];
-
-        for (const file of fileEntries) {
-          const fullPath = getFullPath(file);
-          let content: string;
-          let encoding: "utf-8" | "base64" = "utf-8";
-
-          if (file.content !== undefined) {
-            content = file.content;
-          } else if (file.storageUrl) {
-            const response = await ky.get(file.storageUrl);
-            const buffer = Buffer.from(await response.arrayBuffer());
-            content = buffer.toString("base64");
-            encoding = "base64";
-          } else {
-            continue;
-          }
-
-          const { data: blob } = await octokit.rest.git.createBlob({
-            owner: user.login,
-            repo: repoName,
-            content,
-            encoding,
-          });
-
-          treeItems.push({
-            path: fullPath,
-            mode: "100644",
-            type: "blob",
-            sha: blob.sha,
-          });
-        }
-
-        if (treeItems.length === 0) {
-          throw new Error("Failed to create any file blobs");
-        }
-
-        // Create the tree
-        const { data: tree } = await octokit.rest.git.createTree({
-          owner: user.login,
-          repo: repoName,
-          tree: treeItems,
-        });
-
-        // Create commit
-        const { data: commit } = await octokit.rest.git.createCommit({
-          owner: user.login,
-          repo: repoName,
-          message: "Initial commit from Aigorithm",
-          tree: tree.sha,
-          parents: [initialCommitSha],
-        });
-
-        // Update branch ref
-        await octokit.rest.git.updateRef({
-          owner: user.login,
-          repo: repoName,
-          ref: "heads/main",
-          sha: commit.sha,
-          force: true,
-        });
-
-        // Set status to completed
-        await convex.mutation(api.system.updateExportStatus, {
-          internalKey,
-          projectId: projectId as Id<"projects">,
-          status: "completed",
-          repoUrl: repo.html_url,
-        });
-      } catch (err) {
-        console.error("Direct export error:", err);
-        await convex.mutation(api.system.updateExportStatus, {
-          internalKey,
-          projectId: projectId as Id<"projects">,
-          status: "failed",
-        });
-      }
-    })();
-
-    // Also trigger inngest if available
-    try {
-      await inngest.send({
-        name: "github/export.repo",
-        data: {
-          projectId,
-          repoName,
-          visibility,
-          description,
-          githubToken,
-          internalKey,
-        },
-      });
-    } catch {
-      // Inngest send warning ignored, direct export is running
-    }
+    // Hand off to Inngest for reliable background processing
+    // (background IIFE gets killed by Vercel after the response returns)
+    await inngest.send({
+      name: "github/export.repo",
+      data: {
+        projectId,
+        repoName,
+        visibility,
+        description,
+        githubToken,
+        internalKey,
+      },
+    });
 
     return NextResponse.json({ 
       success: true, 

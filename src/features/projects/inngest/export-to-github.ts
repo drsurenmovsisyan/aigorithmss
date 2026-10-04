@@ -87,18 +87,24 @@ export const exportToGithub = inngest.createFunction(
       });
     });
 
-    // Wait for GitHub to initialize the repo (auto_init is async on GitHub's side)
-    await step.sleep("wait-for-repo-init", "3s");
-
-    // Get the initial commit SHA (we need this as parent for our commit)
+    // Poll until GitHub has initialized the repo (usually under 500ms, max 5s)
     const initialCommitSha = await step.run("get-initial-commit", async () => {
-      const { data: ref } = await octokit.rest.git.getRef({
-        owner: user.login,
-        repo: repoName,
-        ref: "heads/main",
-      });
-      return ref.object.sha;
+      for (let attempt = 0; attempt < 15; attempt++) {
+        try {
+          const { data: ref } = await octokit.rest.git.getRef({
+            owner: user.login,
+            repo: repoName,
+            ref: "heads/main",
+          });
+          return ref.object.sha;
+        } catch {
+          // Repo not ready yet — wait 300ms and retry
+          await new Promise((r) => setTimeout(r, 300));
+        }
+      }
+      throw new Error("GitHub repo did not initialize in time");
     });
+
 
     // Fetch all project files with storage URLs
     const files = await step.run("fetch-project-files", async () => {
