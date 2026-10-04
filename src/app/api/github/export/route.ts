@@ -34,22 +34,25 @@ export async function POST(request: Request) {
 
     const client = await clerkClient();
 
-    // Token priority: (1) inline PAT → (2) saved PAT in Clerk metadata → (3) Clerk OAuth
-    let githubToken: string | undefined = githubPat?.trim() || undefined;
+    // Token priority: (1) Clerk OAuth (via Login with GitHub) → (2) saved PAT fallback → (3) inline PAT
+    let githubToken: string | undefined;
+
+    // Primary: Clerk OAuth token from GitHub social connection
+    try {
+      const tokens = await client.users.getUserOauthAccessToken(userId, "github");
+      githubToken = tokens.data[0]?.token;
+    } catch {}
 
     if (!githubToken) {
-      // Check saved PAT in Clerk private metadata (persistent, works for all clients)
+      // Fallback: saved PAT in Clerk private metadata (legacy)
       const user = await client.users.getUser(userId);
       const meta = user.privateMetadata as { githubPat?: string | null };
       githubToken = meta?.githubPat?.trim() || undefined;
     }
 
-    if (!githubToken) {
-      // Fall back to Clerk OAuth token
-      try {
-        const tokens = await client.users.getUserOauthAccessToken(userId, "github");
-        githubToken = tokens.data[0]?.token;
-      } catch {}
+    if (!githubToken && githubPat?.trim()) {
+      // Last resort: inline PAT passed in request body
+      githubToken = githubPat.trim();
     }
 
     if (!githubToken) {

@@ -1,20 +1,21 @@
+"use client";
+
 import React, { useState, useEffect, useCallback } from "react";
 import ky, { HTTPError } from "ky";
 import { z } from "zod";
 import { toast } from "sonner";
 import { useForm } from "@tanstack/react-form";
 import { FaGithub } from "react-icons/fa";
+import { useUser } from "@clerk/nextjs";
 import {
   CheckCheckIcon,
   CheckCircle2Icon,
   DownloadIcon,
   ExternalLinkIcon,
   FolderArchiveIcon,
-  KeyRoundIcon,
   Loader2Icon,
   LoaderIcon,
   ShieldCheckIcon,
-  Trash2Icon,
   XCircleIcon,
 } from "lucide-react";
 import JSZip from "jszip";
@@ -54,13 +55,6 @@ const formSchema = z.object({
   description: z.string().max(350, "Description is too long"),
 });
 
-interface GitHubStatus {
-  connected: boolean;
-  method?: "pat" | "oauth";
-  login?: string | null;
-  connectedAt?: string | null;
-}
-
 interface ExportPopoverProps {
   projectId: Id<"projects">;
 }
@@ -68,81 +62,46 @@ interface ExportPopoverProps {
 export const ExportPopover = ({ projectId }: ExportPopoverProps) => {
   const project = useProject(projectId);
   const files = useFiles(projectId);
+  const { user, isLoaded } = useUser();
 
   const [open, setOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<"github" | "zip">("github");
   const [isZipping, setIsZipping] = useState(false);
-
-  // GitHub connection state
-  const [ghStatus, setGhStatus] = useState<GitHubStatus | null>(null);
-  const [isLoadingStatus, setIsLoadingStatus] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
-  const [isDisconnecting, setIsDisconnecting] = useState(false);
-  const [patInput, setPatInput] = useState("");
-  const [showConnect, setShowConnect] = useState(false);
 
   const exportStatus = project?.exportStatus;
   const exportRepoUrl = project?.exportRepoUrl;
 
-  const fetchGitHubStatus = useCallback(async () => {
-    setIsLoadingStatus(true);
-    try {
-      const data = await ky.get("/api/github/status").json<GitHubStatus>();
-      setGhStatus(data);
-    } catch {
-      setGhStatus({ connected: false });
-    } finally {
-      setIsLoadingStatus(false);
-    }
-  }, []);
+  // Check if the user has GitHub connected via Clerk OAuth
+  const githubAccount = user?.externalAccounts?.find(
+    (a) => a.provider === "github"
+  );
+  const isGitHubConnected = !!githubAccount && githubAccount.verification?.status === "verified";
+  const githubLogin = githubAccount?.username ?? null;
 
-  // Load status when popover opens
-  useEffect(() => {
-    if (open) {
-      fetchGitHubStatus();
-    }
-  }, [open, fetchGitHubStatus]);
-
-  const handleConnectGitHub = async () => {
-    if (!patInput.trim()) return;
+  const handleConnectGitHub = useCallback(async () => {
+    if (!user) return;
     setIsConnecting(true);
     try {
-      const data = await ky
-        .post("/api/github/connect", { json: { githubPat: patInput.trim() } })
-        .json<{ success: boolean; login: string }>();
-
-      toast.success(`GitHub connected as @${data.login}`, {
-        description: "Your token is saved — export will work automatically from now on.",
+      const externalAccount = await user.createExternalAccount({
+        strategy: "oauth_github",
+        redirectUrl: window.location.href,
+        additionalScopes: ["repo"],
       });
-      setPatInput("");
-      setShowConnect(false);
-      await fetchGitHubStatus();
-    } catch (error) {
-      if (error instanceof HTTPError) {
-        try {
-          const body = await error.response.json<{ error: string }>();
-          toast.error(body.error ?? "Failed to connect GitHub");
-          return;
-        } catch {}
+      // Redirect to GitHub OAuth page
+      const redirectUrl = externalAccount.verification?.externalVerificationRedirectURL?.href;
+      if (redirectUrl) {
+        window.location.href = redirectUrl;
+      } else {
+        toast.error("Could not get GitHub authorization URL. Please try again.");
+        setIsConnecting(false);
       }
-      toast.error("Failed to connect GitHub account");
-    } finally {
+    } catch (err) {
+      console.error("GitHub connect error:", err);
+      toast.error("Failed to start GitHub login. Please try again.");
       setIsConnecting(false);
     }
-  };
-
-  const handleDisconnectGitHub = async () => {
-    setIsDisconnecting(true);
-    try {
-      await ky.post("/api/github/disconnect");
-      toast.success("GitHub disconnected");
-      setGhStatus({ connected: false });
-    } catch {
-      toast.error("Failed to disconnect GitHub");
-    } finally {
-      setIsDisconnecting(false);
-    }
-  };
+  }, [user]);
 
   const form = useForm({
     defaultValues: {
@@ -154,9 +113,8 @@ export const ExportPopover = ({ projectId }: ExportPopoverProps) => {
       onSubmit: formSchema,
     },
     onSubmit: async ({ value }) => {
-      if (!ghStatus?.connected) {
+      if (!isGitHubConnected) {
         toast.error("Connect your GitHub account first");
-        setShowConnect(true);
         return;
       }
       try {
@@ -173,12 +131,6 @@ export const ExportPopover = ({ projectId }: ExportPopoverProps) => {
         if (error instanceof HTTPError) {
           try {
             const body = await error.response.json<{ error: string }>();
-            if (body.error?.includes("GitHub not connected")) {
-              setGhStatus({ connected: false });
-              setShowConnect(true);
-              toast.error("GitHub connection lost — please reconnect");
-              return;
-            }
             if (body.error) {
               toast.error(body.error);
               return;
@@ -247,104 +199,48 @@ export const ExportPopover = ({ projectId }: ExportPopoverProps) => {
     setOpen(false);
   };
 
-  // --- GitHub connection panel ---
-  const renderGitHubConnectionPanel = () => {
-    if (isLoadingStatus) {
+  // --- GitHub connection status badge ---
+  const renderGitHubStatus = () => {
+    if (!isLoaded) {
       return (
         <div className="flex items-center gap-2 text-xs text-muted-foreground py-1">
           <Loader2Icon className="size-3 animate-spin" />
-          Checking GitHub connection...
+          Loading...
         </div>
       );
     }
 
-    if (ghStatus?.connected) {
+    if (isGitHubConnected) {
       return (
-        <div className="flex items-center justify-between rounded-md border border-emerald-200 bg-emerald-50 dark:bg-emerald-950/30 dark:border-emerald-800 px-3 py-2">
-          <div className="flex items-center gap-2">
-            <ShieldCheckIcon className="size-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-            <div>
-              <p className="text-xs font-medium text-emerald-800 dark:text-emerald-300">
-                GitHub connected
-                {ghStatus.login ? ` · @${ghStatus.login}` : ""}
-              </p>
-              <p className="text-[10px] text-emerald-600 dark:text-emerald-500">
-                {ghStatus.method === "pat" ? "Personal Access Token" : "OAuth"}
-              </p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={handleDisconnectGitHub}
-            disabled={isDisconnecting}
-            className="text-muted-foreground hover:text-rose-500 transition-colors disabled:opacity-50"
-            title="Disconnect GitHub"
-          >
-            {isDisconnecting
-              ? <Loader2Icon className="size-3.5 animate-spin" />
-              : <Trash2Icon className="size-3.5" />
-            }
-          </button>
+        <div className="flex items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 dark:bg-emerald-950/30 dark:border-emerald-800 px-3 py-2">
+          <ShieldCheckIcon className="size-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+          <p className="text-xs font-medium text-emerald-800 dark:text-emerald-300">
+            GitHub connected{githubLogin ? ` · @${githubLogin}` : ""}
+          </p>
         </div>
       );
     }
 
     return (
-      <div className="rounded-md border border-amber-200 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 p-3 space-y-2.5">
-        <div className="flex items-start gap-2">
-          <KeyRoundIcon className="size-3.5 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
-          <div className="space-y-0.5">
-            <p className="text-xs font-semibold text-amber-800 dark:text-amber-300">
-              Connect GitHub to export
-            </p>
-            <p className="text-[11px] text-amber-700 dark:text-amber-400 leading-snug">
-              Paste a{" "}
-              <a
-                href="https://github.com/settings/tokens/new?scopes=repo&description=Aigorithm+Export"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline font-medium hover:text-amber-900"
-              >
-                GitHub Personal Access Token
-              </a>{" "}
-              with <code className="bg-amber-100 dark:bg-amber-900 px-0.5 rounded text-[10px]">repo</code> scope.
-              Saved securely — enter once, works forever.
-            </p>
-          </div>
-        </div>
-        <div className="flex gap-2">
-          <Input
-            id="github-pat-connect"
-            type="password"
-            value={patInput}
-            onChange={(e) => setPatInput(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") handleConnectGitHub(); }}
-            placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
-            className="h-8 text-xs font-mono flex-1"
-            autoComplete="off"
-            autoFocus
-          />
-          <Button
-            type="button"
-            size="sm"
-            className="h-8 px-3 shrink-0"
-            onClick={handleConnectGitHub}
-            disabled={isConnecting || !patInput.trim()}
-          >
-            {isConnecting
-              ? <Loader2Icon className="size-3.5 animate-spin" />
-              : "Connect"
-            }
-          </Button>
-        </div>
-        <button
-          type="button"
-          className="text-[10px] text-muted-foreground underline hover:text-foreground"
-          onClick={() => setShowConnect(false)}
-        >
-          Cancel
-        </button>
-      </div>
+      <Button
+        type="button"
+        size="sm"
+        className="w-full"
+        onClick={handleConnectGitHub}
+        disabled={isConnecting || !isLoaded}
+      >
+        {isConnecting ? (
+          <>
+            <Loader2Icon className="size-3.5 mr-2 animate-spin" />
+            Connecting...
+          </>
+        ) : (
+          <>
+            <FaGithub className="size-3.5 mr-2" />
+            Login with GitHub
+          </>
+        )}
+      </Button>
     );
   };
 
@@ -508,14 +404,11 @@ export const ExportPopover = ({ projectId }: ExportPopoverProps) => {
                 </p>
               </div>
 
-              {/* GitHub Connection Panel */}
-              {(showConnect || !ghStatus?.connected)
-                ? renderGitHubConnectionPanel()
-                : renderGitHubConnectionPanel()
-              }
+              {/* GitHub connection — single button or status badge */}
+              {renderGitHubStatus()}
 
-              {/* Show form fields only when GitHub is connected */}
-              {ghStatus?.connected && (
+              {/* Form fields — only when connected */}
+              {isGitHubConnected && (
                 <>
                   <form.Field name="repoName">
                     {(field) => {
