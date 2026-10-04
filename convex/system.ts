@@ -634,3 +634,44 @@ export const createProjectWithConversation = mutation({
     return { projectId, conversationId };
   },
 });
+
+// Count all user messages sent by a specific Clerk userId (across all their projects)
+export const getUserMessageCount = query({
+  args: {
+    internalKey: v.string(),
+    userId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    validateInternalKey(args.internalKey);
+
+    // Get all projects owned by this user
+    const projects = await ctx.db
+      .query("projects")
+      .withIndex("by_owner", (q) => q.eq("ownerId", args.userId))
+      .collect();
+
+    if (projects.length === 0) return 0;
+
+    // Count all user-role messages across all their projects
+    let total = 0;
+    for (const project of projects) {
+      const conversations = await ctx.db
+        .query("conversations")
+        .withIndex("by_project", (q) => q.eq("projectId", project._id))
+        .collect();
+
+      for (const conversation of conversations) {
+        const messages = await ctx.db
+          .query("messages")
+          .withIndex("by_conversation", (q) =>
+            q.eq("conversationId", conversation._id)
+          )
+          .filter((q) => q.eq(q.field("role"), "user"))
+          .collect();
+        total += messages.length;
+      }
+    }
+
+    return total;
+  },
+});

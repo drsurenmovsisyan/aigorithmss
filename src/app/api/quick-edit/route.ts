@@ -3,6 +3,7 @@ import { generateText, Output } from "ai";
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
+import { checkUserAccess } from "@/lib/user-access";
 
 const openrouter = createOpenRouter({
   apiKey: process.env.OPENROUTER_API_KEY,
@@ -52,7 +53,15 @@ export async function POST(request: Request) {
     if (!userId) {
       return NextResponse.json(
         { error: "Unauthorized" },
-        { status: 400 }
+        { status: 401 }
+      );
+    }
+
+    const access = await checkUserAccess(userId);
+    if (!access.allowed) {
+      return NextResponse.json(
+        { error: access.error, code: access.code },
+        { status: access.status }
       );
     }
 

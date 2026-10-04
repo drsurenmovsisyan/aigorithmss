@@ -3,6 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
+import { checkUserAccess } from "@/lib/user-access";
 
 const openrouter = createOpenRouter({
   apiKey: process.env.OPENROUTER_API_KEY,
@@ -55,6 +56,11 @@ export async function POST(request: Request) {
         { error: "Unauthorized" },
         { status: 403 },
       );
+    }
+
+    const access = await checkUserAccess(userId);
+    if (!access.allowed) {
+      return NextResponse.json({ suggestion: "" });
     }
 
     const {

@@ -134,8 +134,15 @@ export const ConversationSidebar = ({
           modelId,
         },
       });
-    } catch {
-      toast.error("Message failed to send");
+    } catch (err: any) {
+      let errorMsg = "Message failed to send";
+      try {
+        if (err?.response) {
+          const data = await err.response.json();
+          if (data?.error) errorMsg = data.error;
+        }
+      } catch {}
+      toast.error(errorMsg);
     }
 
     setInput("");

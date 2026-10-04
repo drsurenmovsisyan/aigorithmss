@@ -14,6 +14,7 @@ import { inngest } from "@/inngest/client";
 import { convex, getInternalKey } from "@/lib/convex-client";
 
 import { api } from "../../../../../convex/_generated/api";
+import { checkUserAccess } from "@/lib/user-access";
 
 const requestSchema = z.object({
   prompt: z.string().min(1),
@@ -26,6 +27,15 @@ export async function POST(request: Request) {
 
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Access & credit limit check
+    const access = await checkUserAccess(userId);
+    if (!access.allowed) {
+      return NextResponse.json(
+        { error: access.error, code: access.code },
+        { status: access.status }
+      );
     }
 
     const internalKey = getInternalKey();

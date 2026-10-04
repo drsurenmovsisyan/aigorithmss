@@ -4,6 +4,7 @@ import { auth } from "@clerk/nextjs/server";
 
 import { inngest } from "@/inngest/client";
 import { convex, getInternalKey } from "@/lib/convex-client";
+import { checkUserAccess } from "@/lib/user-access";
 
 import { api } from "../../../../convex/_generated/api";
 import { Id } from "../../../../convex/_generated/dataModel";
@@ -29,6 +30,17 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   }
+
+  // ── Credit & access control ──────────────────────────────────────────────
+  const access = await checkUserAccess(userId);
+  if (!access.allowed) {
+    return NextResponse.json(
+      { error: access.error, code: access.code },
+      { status: access.status }
+    );
+  }
+  // ─────────────────────────────────────────────────────────────────────────
+
 
   const body = await request.json();
   const { conversationId, message, modelId } = requestSchema.parse(body);
