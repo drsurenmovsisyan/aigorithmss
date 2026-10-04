@@ -1,12 +1,12 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState } from "react";
 import ky, { HTTPError } from "ky";
 import { z } from "zod";
 import { toast } from "sonner";
 import { useForm } from "@tanstack/react-form";
+import { useClerk } from "@clerk/nextjs";
 import { FaGithub } from "react-icons/fa";
-import { useUser } from "@clerk/nextjs";
 import {
   CheckCheckIcon,
   CheckCircle2Icon,
@@ -15,7 +15,6 @@ import {
   FolderArchiveIcon,
   Loader2Icon,
   LoaderIcon,
-  ShieldCheckIcon,
   XCircleIcon,
 } from "lucide-react";
 import JSZip from "jszip";
@@ -62,46 +61,14 @@ interface ExportPopoverProps {
 export const ExportPopover = ({ projectId }: ExportPopoverProps) => {
   const project = useProject(projectId);
   const files = useFiles(projectId);
-  const { user, isLoaded } = useUser();
+  const { openUserProfile } = useClerk();
 
   const [open, setOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<"github" | "zip">("github");
   const [isZipping, setIsZipping] = useState(false);
-  const [isConnecting, setIsConnecting] = useState(false);
 
   const exportStatus = project?.exportStatus;
   const exportRepoUrl = project?.exportRepoUrl;
-
-  // Check if the user has GitHub connected via Clerk OAuth
-  const githubAccount = user?.externalAccounts?.find(
-    (a) => a.provider === "github"
-  );
-  const isGitHubConnected = !!githubAccount && githubAccount.verification?.status === "verified";
-  const githubLogin = githubAccount?.username ?? null;
-
-  const handleConnectGitHub = useCallback(async () => {
-    if (!user) return;
-    setIsConnecting(true);
-    try {
-      const externalAccount = await user.createExternalAccount({
-        strategy: "oauth_github",
-        redirectUrl: window.location.href,
-        additionalScopes: ["repo"],
-      });
-      // Redirect to GitHub OAuth page
-      const redirectUrl = externalAccount.verification?.externalVerificationRedirectURL?.href;
-      if (redirectUrl) {
-        window.location.href = redirectUrl;
-      } else {
-        toast.error("Could not get GitHub authorization URL. Please try again.");
-        setIsConnecting(false);
-      }
-    } catch (err) {
-      console.error("GitHub connect error:", err);
-      toast.error("Failed to start GitHub login. Please try again.");
-      setIsConnecting(false);
-    }
-  }, [user]);
 
   const form = useForm({
     defaultValues: {
@@ -113,10 +80,6 @@ export const ExportPopover = ({ projectId }: ExportPopoverProps) => {
       onSubmit: formSchema,
     },
     onSubmit: async ({ value }) => {
-      if (!isGitHubConnected) {
-        toast.error("Connect your GitHub account first");
-        return;
-      }
       try {
         await ky.post("/api/github/export", {
           json: {
@@ -131,6 +94,18 @@ export const ExportPopover = ({ projectId }: ExportPopoverProps) => {
         if (error instanceof HTTPError) {
           try {
             const body = await error.response.json<{ error: string }>();
+
+            if (body.error?.includes("GitHub not connected")) {
+              toast.error("GitHub account not connected", {
+                description: "Connect GitHub in your profile settings.",
+                action: {
+                  label: "Connect GitHub",
+                  onClick: () => openUserProfile(),
+                },
+              });
+              return;
+            }
+
             if (body.error) {
               toast.error(body.error);
               return;
@@ -197,51 +172,6 @@ export const ExportPopover = ({ projectId }: ExportPopoverProps) => {
   const handleResetExport = async () => {
     await ky.post("/api/github/export/reset", { json: { projectId } });
     setOpen(false);
-  };
-
-  // --- GitHub connection status badge ---
-  const renderGitHubStatus = () => {
-    if (!isLoaded) {
-      return (
-        <div className="flex items-center gap-2 text-xs text-muted-foreground py-1">
-          <Loader2Icon className="size-3 animate-spin" />
-          Loading...
-        </div>
-      );
-    }
-
-    if (isGitHubConnected) {
-      return (
-        <div className="flex items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 dark:bg-emerald-950/30 dark:border-emerald-800 px-3 py-2">
-          <ShieldCheckIcon className="size-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-          <p className="text-xs font-medium text-emerald-800 dark:text-emerald-300">
-            GitHub connected{githubLogin ? ` · @${githubLogin}` : ""}
-          </p>
-        </div>
-      );
-    }
-
-    return (
-      <Button
-        type="button"
-        size="sm"
-        className="w-full"
-        onClick={handleConnectGitHub}
-        disabled={isConnecting || !isLoaded}
-      >
-        {isConnecting ? (
-          <>
-            <Loader2Icon className="size-3.5 mr-2 animate-spin" />
-            Connecting...
-          </>
-        ) : (
-          <>
-            <FaGithub className="size-3.5 mr-2" />
-            Login with GitHub
-          </>
-        )}
-      </Button>
-    );
   };
 
   // --- Export status screens ---
@@ -404,109 +334,113 @@ export const ExportPopover = ({ projectId }: ExportPopoverProps) => {
                 </p>
               </div>
 
-              {/* GitHub connection — single button or status badge */}
-              {renderGitHubStatus()}
+              {/* GitHub connect hint */}
+              <button
+                type="button"
+                className="w-full flex items-center gap-2 rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"
+                onClick={() => openUserProfile()}
+              >
+                <FaGithub className="size-3.5 shrink-0" />
+                <span>
+                  Connect GitHub in your profile to enable export →
+                </span>
+              </button>
 
-              {/* Form fields — only when connected */}
-              {isGitHubConnected && (
-                <>
-                  <form.Field name="repoName">
-                    {(field) => {
-                      const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
-                      return (
-                        <Field data-invalid={isInvalid}>
-                          <FieldLabel htmlFor={field.name} className="text-xs">
-                            Repository Name
-                          </FieldLabel>
-                          <Input
-                            id={field.name}
-                            name={field.name}
-                            value={field.state.value}
-                            onBlur={field.handleBlur}
-                            onChange={(e) => field.handleChange(e.target.value)}
-                            aria-invalid={isInvalid}
-                            placeholder="my-project"
-                            className="h-8 text-xs"
-                          />
-                          {isInvalid && <FieldError errors={field.state.meta.errors} />}
-                        </Field>
-                      );
-                    }}
-                  </form.Field>
+              <form.Field name="repoName">
+                {(field) => {
+                  const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
+                  return (
+                    <Field data-invalid={isInvalid}>
+                      <FieldLabel htmlFor={field.name} className="text-xs">
+                        Repository Name
+                      </FieldLabel>
+                      <Input
+                        id={field.name}
+                        name={field.name}
+                        value={field.state.value}
+                        onBlur={field.handleBlur}
+                        onChange={(e) => field.handleChange(e.target.value)}
+                        aria-invalid={isInvalid}
+                        placeholder="my-project"
+                        className="h-8 text-xs"
+                      />
+                      {isInvalid && <FieldError errors={field.state.meta.errors} />}
+                    </Field>
+                  );
+                }}
+              </form.Field>
 
-                  <form.Field name="visibility">
-                    {(field) => (
-                      <Field>
-                        <FieldLabel htmlFor={field.name} className="text-xs">
-                          Visibility
-                        </FieldLabel>
-                        <Select
-                          value={field.state.value}
-                          onValueChange={(value: "public" | "private") =>
-                            field.handleChange(value)
-                          }
-                        >
-                          <SelectTrigger id={field.name} className="h-8 text-xs">
-                            <SelectValue placeholder="Select visibility" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="private">Private</SelectItem>
-                            <SelectItem value="public">Public</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </Field>
+              <form.Field name="visibility">
+                {(field) => (
+                  <Field>
+                    <FieldLabel htmlFor={field.name} className="text-xs">
+                      Visibility
+                    </FieldLabel>
+                    <Select
+                      value={field.state.value}
+                      onValueChange={(value: "public" | "private") =>
+                        field.handleChange(value)
+                      }
+                    >
+                      <SelectTrigger id={field.name} className="h-8 text-xs">
+                        <SelectValue placeholder="Select visibility" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="private">Private</SelectItem>
+                        <SelectItem value="public">Public</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                )}
+              </form.Field>
+
+              <form.Field name="description">
+                {(field) => {
+                  const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
+                  return (
+                    <Field data-invalid={isInvalid}>
+                      <FieldLabel htmlFor={field.name} className="text-xs">
+                        Description (optional)
+                      </FieldLabel>
+                      <Textarea
+                        id={field.name}
+                        name={field.name}
+                        value={field.state.value}
+                        onBlur={field.handleBlur}
+                        onChange={(e) => field.handleChange(e.target.value)}
+                        aria-invalid={isInvalid}
+                        placeholder="Project description"
+                        rows={2}
+                        className="text-xs min-h-[48px]"
+                      />
+                      {isInvalid && <FieldError errors={field.state.meta.errors} />}
+                    </Field>
+                  );
+                }}
+              </form.Field>
+
+              <form.Subscribe selector={(state) => [state.canSubmit, state.isSubmitting]}>
+                {([canSubmit, isSubmitting]) => (
+                  <Button
+                    type="submit"
+                    size="sm"
+                    className="w-full mt-2"
+                    disabled={!canSubmit || isSubmitting}
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <Loader2Icon className="size-3.5 mr-1 animate-spin" />
+                        Exporting...
+                      </>
+                    ) : (
+                      <>
+                        <FaGithub className="size-3.5 mr-1" />
+                        Create Repository
+                      </>
                     )}
-                  </form.Field>
-
-                  <form.Field name="description">
-                    {(field) => {
-                      const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
-                      return (
-                        <Field data-invalid={isInvalid}>
-                          <FieldLabel htmlFor={field.name} className="text-xs">
-                            Description (optional)
-                          </FieldLabel>
-                          <Textarea
-                            id={field.name}
-                            name={field.name}
-                            value={field.state.value}
-                            onBlur={field.handleBlur}
-                            onChange={(e) => field.handleChange(e.target.value)}
-                            aria-invalid={isInvalid}
-                            placeholder="Project description"
-                            rows={2}
-                            className="text-xs min-h-[48px]"
-                          />
-                          {isInvalid && <FieldError errors={field.state.meta.errors} />}
-                        </Field>
-                      );
-                    }}
-                  </form.Field>
-
-                  <form.Subscribe selector={(state) => [state.canSubmit, state.isSubmitting]}>
-                    {([canSubmit, isSubmitting]) => (
-                      <Button
-                        type="submit"
-                        size="sm"
-                        className="w-full mt-2"
-                        disabled={!canSubmit || isSubmitting}
-                      >
-                        {isSubmitting ? (
-                          <>
-                            <Loader2Icon className="size-3.5 mr-1 animate-spin" />
-                            Exporting...
-                          </>
-                        ) : (
-                          <>
-                            <FaGithub className="size-3.5 mr-1" />
-                            Create Repository
-                          </>
-                        )}
-                      </Button>
-                    )}
-                  </form.Subscribe>
-                </>
-              )}
+                  </Button>
+                )}
+              </form.Subscribe>
             </div>
           </form>
         )}
