@@ -1,9 +1,8 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import ky, { HTTPError } from "ky";
 import { z } from "zod";
 import { toast } from "sonner";
 import { useForm } from "@tanstack/react-form";
-import { useClerk } from "@clerk/nextjs";
 import { FaGithub } from "react-icons/fa";
 import {
   CheckCheckIcon,
@@ -11,8 +10,11 @@ import {
   DownloadIcon,
   ExternalLinkIcon,
   FolderArchiveIcon,
+  KeyRoundIcon,
   Loader2Icon,
   LoaderIcon,
+  ShieldCheckIcon,
+  Trash2Icon,
   XCircleIcon,
 } from "lucide-react";
 import JSZip from "jszip";
@@ -52,6 +54,13 @@ const formSchema = z.object({
   description: z.string().max(350, "Description is too long"),
 });
 
+interface GitHubStatus {
+  connected: boolean;
+  method?: "pat" | "oauth";
+  login?: string | null;
+  connectedAt?: string | null;
+}
+
 interface ExportPopoverProps {
   projectId: Id<"projects">;
 }
@@ -59,15 +68,81 @@ interface ExportPopoverProps {
 export const ExportPopover = ({ projectId }: ExportPopoverProps) => {
   const project = useProject(projectId);
   const files = useFiles(projectId);
+
   const [open, setOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<"github" | "zip">("github");
   const [isZipping, setIsZipping] = useState(false);
-  const [githubPat, setGithubPat] = useState("");
-  const [showPatInput, setShowPatInput] = useState(false);
-  const { openUserProfile } = useClerk();
+
+  // GitHub connection state
+  const [ghStatus, setGhStatus] = useState<GitHubStatus | null>(null);
+  const [isLoadingStatus, setIsLoadingStatus] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [isDisconnecting, setIsDisconnecting] = useState(false);
+  const [patInput, setPatInput] = useState("");
+  const [showConnect, setShowConnect] = useState(false);
 
   const exportStatus = project?.exportStatus;
   const exportRepoUrl = project?.exportRepoUrl;
+
+  const fetchGitHubStatus = useCallback(async () => {
+    setIsLoadingStatus(true);
+    try {
+      const data = await ky.get("/api/github/status").json<GitHubStatus>();
+      setGhStatus(data);
+    } catch {
+      setGhStatus({ connected: false });
+    } finally {
+      setIsLoadingStatus(false);
+    }
+  }, []);
+
+  // Load status when popover opens
+  useEffect(() => {
+    if (open) {
+      fetchGitHubStatus();
+    }
+  }, [open, fetchGitHubStatus]);
+
+  const handleConnectGitHub = async () => {
+    if (!patInput.trim()) return;
+    setIsConnecting(true);
+    try {
+      const data = await ky
+        .post("/api/github/connect", { json: { githubPat: patInput.trim() } })
+        .json<{ success: boolean; login: string }>();
+
+      toast.success(`GitHub connected as @${data.login}`, {
+        description: "Your token is saved — export will work automatically from now on.",
+      });
+      setPatInput("");
+      setShowConnect(false);
+      await fetchGitHubStatus();
+    } catch (error) {
+      if (error instanceof HTTPError) {
+        try {
+          const body = await error.response.json<{ error: string }>();
+          toast.error(body.error ?? "Failed to connect GitHub");
+          return;
+        } catch {}
+      }
+      toast.error("Failed to connect GitHub account");
+    } finally {
+      setIsConnecting(false);
+    }
+  };
+
+  const handleDisconnectGitHub = async () => {
+    setIsDisconnecting(true);
+    try {
+      await ky.post("/api/github/disconnect");
+      toast.success("GitHub disconnected");
+      setGhStatus({ connected: false });
+    } catch {
+      toast.error("Failed to disconnect GitHub");
+    } finally {
+      setIsDisconnecting(false);
+    }
+  };
 
   const form = useForm({
     defaultValues: {
@@ -79,6 +154,11 @@ export const ExportPopover = ({ projectId }: ExportPopoverProps) => {
       onSubmit: formSchema,
     },
     onSubmit: async ({ value }) => {
+      if (!ghStatus?.connected) {
+        toast.error("Connect your GitHub account first");
+        setShowConnect(true);
+        return;
+      }
       try {
         await ky.post("/api/github/export", {
           json: {
@@ -86,24 +166,19 @@ export const ExportPopover = ({ projectId }: ExportPopoverProps) => {
             repoName: value.repoName,
             visibility: value.visibility,
             description: value.description || undefined,
-            ...(githubPat.trim() ? { githubPat: githubPat.trim() } : {}),
           },
         });
-
-        toast.success("Export started...");
+        toast.success("Export started! Check back in a moment.");
       } catch (error) {
         if (error instanceof HTTPError) {
           try {
             const body = await error.response.json<{ error: string }>();
-            if (body.error?.includes("GitHub not connected") || body.error?.includes("Personal Access Token")) {
-              // Auto-show PAT input so user can paste their token immediately
-              setShowPatInput(true);
-              toast.error("GitHub not connected", {
-                description: "Paste your GitHub Personal Access Token below to export.",
-              });
+            if (body.error?.includes("GitHub not connected")) {
+              setGhStatus({ connected: false });
+              setShowConnect(true);
+              toast.error("GitHub connection lost — please reconnect");
               return;
             }
-
             if (body.error) {
               toast.error(body.error);
               return;
@@ -126,7 +201,6 @@ export const ExportPopover = ({ projectId }: ExportPopoverProps) => {
 
       const zip = new JSZip();
 
-      // Build path hierarchy
       const fileMap = new Map<Id<"files">, Doc<"files">>();
       files.forEach((f) => fileMap.set(f._id, f));
 
@@ -165,18 +239,116 @@ export const ExportPopover = ({ projectId }: ExportPopoverProps) => {
   };
 
   const handleCancelExport = async () => {
-    await ky.post("/api/github/export/cancel", {
-      json: { projectId },
-    });
+    await ky.post("/api/github/export/cancel", { json: { projectId } });
   };
 
   const handleResetExport = async () => {
-    await ky.post("/api/github/export/reset", {
-      json: { projectId },
-    });
+    await ky.post("/api/github/export/reset", { json: { projectId } });
     setOpen(false);
   };
 
+  // --- GitHub connection panel ---
+  const renderGitHubConnectionPanel = () => {
+    if (isLoadingStatus) {
+      return (
+        <div className="flex items-center gap-2 text-xs text-muted-foreground py-1">
+          <Loader2Icon className="size-3 animate-spin" />
+          Checking GitHub connection...
+        </div>
+      );
+    }
+
+    if (ghStatus?.connected) {
+      return (
+        <div className="flex items-center justify-between rounded-md border border-emerald-200 bg-emerald-50 dark:bg-emerald-950/30 dark:border-emerald-800 px-3 py-2">
+          <div className="flex items-center gap-2">
+            <ShieldCheckIcon className="size-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+            <div>
+              <p className="text-xs font-medium text-emerald-800 dark:text-emerald-300">
+                GitHub connected
+                {ghStatus.login ? ` · @${ghStatus.login}` : ""}
+              </p>
+              <p className="text-[10px] text-emerald-600 dark:text-emerald-500">
+                {ghStatus.method === "pat" ? "Personal Access Token" : "OAuth"}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={handleDisconnectGitHub}
+            disabled={isDisconnecting}
+            className="text-muted-foreground hover:text-rose-500 transition-colors disabled:opacity-50"
+            title="Disconnect GitHub"
+          >
+            {isDisconnecting
+              ? <Loader2Icon className="size-3.5 animate-spin" />
+              : <Trash2Icon className="size-3.5" />
+            }
+          </button>
+        </div>
+      );
+    }
+
+    return (
+      <div className="rounded-md border border-amber-200 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 p-3 space-y-2.5">
+        <div className="flex items-start gap-2">
+          <KeyRoundIcon className="size-3.5 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+          <div className="space-y-0.5">
+            <p className="text-xs font-semibold text-amber-800 dark:text-amber-300">
+              Connect GitHub to export
+            </p>
+            <p className="text-[11px] text-amber-700 dark:text-amber-400 leading-snug">
+              Paste a{" "}
+              <a
+                href="https://github.com/settings/tokens/new?scopes=repo&description=Aigorithm+Export"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline font-medium hover:text-amber-900"
+              >
+                GitHub Personal Access Token
+              </a>{" "}
+              with <code className="bg-amber-100 dark:bg-amber-900 px-0.5 rounded text-[10px]">repo</code> scope.
+              Saved securely — enter once, works forever.
+            </p>
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <Input
+            id="github-pat-connect"
+            type="password"
+            value={patInput}
+            onChange={(e) => setPatInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") handleConnectGitHub(); }}
+            placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+            className="h-8 text-xs font-mono flex-1"
+            autoComplete="off"
+            autoFocus
+          />
+          <Button
+            type="button"
+            size="sm"
+            className="h-8 px-3 shrink-0"
+            onClick={handleConnectGitHub}
+            disabled={isConnecting || !patInput.trim()}
+          >
+            {isConnecting
+              ? <Loader2Icon className="size-3.5 animate-spin" />
+              : "Connect"
+            }
+          </Button>
+        </div>
+        <button
+          type="button"
+          className="text-[10px] text-muted-foreground underline hover:text-foreground"
+          onClick={() => setShowConnect(false)}
+        >
+          Cancel
+        </button>
+      </div>
+    );
+  };
+
+  // --- Export status screens ---
   const renderContent = () => {
     if (exportStatus === "exporting") {
       return (
@@ -186,12 +358,7 @@ export const ExportPopover = ({ projectId }: ExportPopoverProps) => {
           <p className="text-xs text-muted-foreground text-center">
             Creating repository and pushing project files.
           </p>
-          <Button
-            size="sm"
-            variant="outline"
-            className="w-full mt-2"
-            onClick={handleCancelExport}
-          >
+          <Button size="sm" variant="outline" className="w-full mt-2" onClick={handleCancelExport}>
             Cancel
           </Button>
         </div>
@@ -213,12 +380,7 @@ export const ExportPopover = ({ projectId }: ExportPopoverProps) => {
                 View on GitHub
               </Link>
             </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              className="w-full"
-              onClick={handleResetExport}
-            >
+            <Button size="sm" variant="outline" className="w-full" onClick={handleResetExport}>
               Export Again
             </Button>
           </div>
@@ -232,23 +394,13 @@ export const ExportPopover = ({ projectId }: ExportPopoverProps) => {
           <XCircleIcon className="size-6 text-rose-500" />
           <p className="text-sm font-medium">Unable to export</p>
           <p className="text-xs text-muted-foreground text-center">
-            Something went wrong. You can retry or download directly as a ZIP.
+            Something went wrong. You can retry or download as a ZIP.
           </p>
           <div className="flex flex-col w-full gap-2 mt-2">
-            <Button
-              size="sm"
-              variant="outline"
-              className="w-full"
-              onClick={handleResetExport}
-            >
+            <Button size="sm" variant="outline" className="w-full" onClick={handleResetExport}>
               Retry
             </Button>
-            <Button
-              size="sm"
-              className="w-full"
-              onClick={handleDownloadZip}
-              disabled={isZipping}
-            >
+            <Button size="sm" className="w-full" onClick={handleDownloadZip} disabled={isZipping}>
               <DownloadIcon className="size-4 mr-1" />
               Download as ZIP
             </Button>
@@ -257,7 +409,6 @@ export const ExportPopover = ({ projectId }: ExportPopoverProps) => {
       );
     }
 
-    // Explicitly handle cancelled or completed-without-URL so users aren't silently stuck
     if (exportStatus === "cancelled" || (exportStatus === "completed" && !exportRepoUrl)) {
       return (
         <div className="flex flex-col items-center gap-3 py-3">
@@ -268,11 +419,7 @@ export const ExportPopover = ({ projectId }: ExportPopoverProps) => {
           <p className="text-xs text-muted-foreground text-center">
             Click below to reset and start a fresh export.
           </p>
-          <Button
-            size="sm"
-            className="w-full mt-2"
-            onClick={handleResetExport}
-          >
+          <Button size="sm" className="w-full mt-2" onClick={handleResetExport}>
             Start New Export
           </Button>
         </div>
@@ -281,7 +428,7 @@ export const ExportPopover = ({ projectId }: ExportPopoverProps) => {
 
     return (
       <div className="space-y-4">
-        {/* Tab switch between GitHub and ZIP */}
+        {/* Tab switch */}
         <div className="grid grid-cols-2 p-1 bg-muted rounded-lg text-xs font-medium">
           <button
             type="button"
@@ -361,156 +508,112 @@ export const ExportPopover = ({ projectId }: ExportPopoverProps) => {
                 </p>
               </div>
 
-              {/* PAT input — shown when OAuth isn't connected or user clicks the link */}
-              {showPatInput ? (
-                <div className="rounded-md border border-amber-200 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 p-3 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs font-medium text-amber-800 dark:text-amber-300">
-                      GitHub not connected via OAuth
-                    </p>
-                    <button
-                      type="button"
-                      className="text-xs text-muted-foreground underline hover:text-foreground"
-                      onClick={() => { setShowPatInput(false); setGithubPat(""); }}
-                    >
-                      Hide
-                    </button>
-                  </div>
-                  <p className="text-xs text-amber-700 dark:text-amber-400">
-                    Paste a GitHub{" "}
-                    <a
-                      href="https://github.com/settings/tokens/new?scopes=repo&description=Aigorithm+Export"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="underline font-medium"
-                    >
-                      Personal Access Token
-                    </a>{" "}
-                    with <code className="bg-amber-100 dark:bg-amber-900 px-0.5 rounded">repo</code> scope.
-                  </p>
-                  <Input
-                    id="github-pat"
-                    type="password"
-                    value={githubPat}
-                    onChange={(e) => setGithubPat(e.target.value)}
-                    placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
-                    className="h-8 text-xs font-mono"
-                    autoComplete="off"
-                  />
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  className="text-xs text-muted-foreground underline hover:text-foreground w-full text-left"
-                  onClick={() => setShowPatInput(true)}
-                >
-                  GitHub not connected? Use a Personal Access Token instead
-                </button>
-              )}
+              {/* GitHub Connection Panel */}
+              {(showConnect || !ghStatus?.connected)
+                ? renderGitHubConnectionPanel()
+                : renderGitHubConnectionPanel()
+              }
 
-              <form.Field name="repoName">
-                {(field) => {
-                  const isInvalid =
-                    field.state.meta.isTouched && !field.state.meta.isValid;
+              {/* Show form fields only when GitHub is connected */}
+              {ghStatus?.connected && (
+                <>
+                  <form.Field name="repoName">
+                    {(field) => {
+                      const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
+                      return (
+                        <Field data-invalid={isInvalid}>
+                          <FieldLabel htmlFor={field.name} className="text-xs">
+                            Repository Name
+                          </FieldLabel>
+                          <Input
+                            id={field.name}
+                            name={field.name}
+                            value={field.state.value}
+                            onBlur={field.handleBlur}
+                            onChange={(e) => field.handleChange(e.target.value)}
+                            aria-invalid={isInvalid}
+                            placeholder="my-project"
+                            className="h-8 text-xs"
+                          />
+                          {isInvalid && <FieldError errors={field.state.meta.errors} />}
+                        </Field>
+                      );
+                    }}
+                  </form.Field>
 
-                  return (
-                    <Field data-invalid={isInvalid}>
-                      <FieldLabel htmlFor={field.name} className="text-xs">
-                        Repository Name
-                      </FieldLabel>
-                      <Input
-                        id={field.name}
-                        name={field.name}
-                        value={field.state.value}
-                        onBlur={field.handleBlur}
-                        onChange={(e) => field.handleChange(e.target.value)}
-                        aria-invalid={isInvalid}
-                        placeholder="my-project"
-                        className="h-8 text-xs"
-                      />
-                      {isInvalid && <FieldError errors={field.state.meta.errors} />}
-                    </Field>
-                  );
-                }}
-              </form.Field>
-
-              <form.Field name="visibility">
-                {(field) => {
-                  return (
-                    <Field>
-                      <FieldLabel htmlFor={field.name} className="text-xs">
-                        Visibility
-                      </FieldLabel>
-                      <Select
-                        value={field.state.value}
-                        onValueChange={(value: "public" | "private") =>
-                          field.handleChange(value)
-                        }
-                      >
-                        <SelectTrigger id={field.name} className="h-8 text-xs">
-                          <SelectValue placeholder="Select visibility" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="private">Private</SelectItem>
-                          <SelectItem value="public">Public</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </Field>
-                  );
-                }}
-              </form.Field>
-
-              <form.Field name="description">
-                {(field) => {
-                  const isInvalid =
-                    field.state.meta.isTouched && !field.state.meta.isValid;
-
-                  return (
-                    <Field data-invalid={isInvalid}>
-                      <FieldLabel htmlFor={field.name} className="text-xs">
-                        Description (optional)
-                      </FieldLabel>
-                      <Textarea
-                        id={field.name}
-                        name={field.name}
-                        value={field.state.value}
-                        onBlur={field.handleBlur}
-                        onChange={(e) => field.handleChange(e.target.value)}
-                        aria-invalid={isInvalid}
-                        placeholder="Project description"
-                        rows={2}
-                        className="text-xs min-h-[48px]"
-                      />
-                      {isInvalid && <FieldError errors={field.state.meta.errors} />}
-                    </Field>
-                  );
-                }}
-              </form.Field>
-
-              <form.Subscribe
-                selector={(state) => [state.canSubmit, state.isSubmitting]}
-              >
-                {([canSubmit, isSubmitting]) => (
-                  <Button
-                    type="submit"
-                    size="sm"
-                    className="w-full mt-2"
-                    disabled={!canSubmit || isSubmitting || (showPatInput && !githubPat.trim())}
-                  >
-                    {isSubmitting ? (
-                      <>
-                        <Loader2Icon className="size-3.5 mr-1 animate-spin" />
-                        Exporting...
-                      </>
-                    ) : (
-                      <>
-                        <FaGithub className="size-3.5 mr-1" />
-                        Create Repository
-                      </>
+                  <form.Field name="visibility">
+                    {(field) => (
+                      <Field>
+                        <FieldLabel htmlFor={field.name} className="text-xs">
+                          Visibility
+                        </FieldLabel>
+                        <Select
+                          value={field.state.value}
+                          onValueChange={(value: "public" | "private") =>
+                            field.handleChange(value)
+                          }
+                        >
+                          <SelectTrigger id={field.name} className="h-8 text-xs">
+                            <SelectValue placeholder="Select visibility" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="private">Private</SelectItem>
+                            <SelectItem value="public">Public</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </Field>
                     )}
-                  </Button>
-                )}
-              </form.Subscribe>
+                  </form.Field>
+
+                  <form.Field name="description">
+                    {(field) => {
+                      const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
+                      return (
+                        <Field data-invalid={isInvalid}>
+                          <FieldLabel htmlFor={field.name} className="text-xs">
+                            Description (optional)
+                          </FieldLabel>
+                          <Textarea
+                            id={field.name}
+                            name={field.name}
+                            value={field.state.value}
+                            onBlur={field.handleBlur}
+                            onChange={(e) => field.handleChange(e.target.value)}
+                            aria-invalid={isInvalid}
+                            placeholder="Project description"
+                            rows={2}
+                            className="text-xs min-h-[48px]"
+                          />
+                          {isInvalid && <FieldError errors={field.state.meta.errors} />}
+                        </Field>
+                      );
+                    }}
+                  </form.Field>
+
+                  <form.Subscribe selector={(state) => [state.canSubmit, state.isSubmitting]}>
+                    {([canSubmit, isSubmitting]) => (
+                      <Button
+                        type="submit"
+                        size="sm"
+                        className="w-full mt-2"
+                        disabled={!canSubmit || isSubmitting}
+                      >
+                        {isSubmitting ? (
+                          <>
+                            <Loader2Icon className="size-3.5 mr-1 animate-spin" />
+                            Exporting...
+                          </>
+                        ) : (
+                          <>
+                            <FaGithub className="size-3.5 mr-1" />
+                            Create Repository
+                          </>
+                        )}
+                      </Button>
+                    )}
+                  </form.Subscribe>
+                </>
+              )}
             </div>
           </form>
         )}

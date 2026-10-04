@@ -18,7 +18,7 @@ const requestSchema = z.object({
   repoName: z.string().min(1).max(100),
   visibility: z.enum(["public", "private"]).default("private"),
   description: z.string().max(350).optional(),
-  githubPat: z.string().optional(), // Personal Access Token fallback when OAuth isn't connected
+  githubPat: z.string().optional(), // One-time inline PAT (used during first connect)
 });
 
 export async function POST(request: Request) {
@@ -32,22 +32,32 @@ export async function POST(request: Request) {
     const body = await request.json();
     const { projectId, repoName, visibility, description, githubPat } = requestSchema.parse(body);
 
-    // Try PAT first (user-provided), then fall back to Clerk OAuth token
+    const client = await clerkClient();
+
+    // Token priority: (1) inline PAT → (2) saved PAT in Clerk metadata → (3) Clerk OAuth
     let githubToken: string | undefined = githubPat?.trim() || undefined;
 
     if (!githubToken) {
-      const client = await clerkClient();
-      const tokens = await client.users.getUserOauthAccessToken(userId, "github");
-      githubToken = tokens.data[0]?.token;
+      // Check saved PAT in Clerk private metadata (persistent, works for all clients)
+      const user = await client.users.getUser(userId);
+      const meta = user.privateMetadata as { githubPat?: string | null };
+      githubToken = meta?.githubPat?.trim() || undefined;
+    }
+
+    if (!githubToken) {
+      // Fall back to Clerk OAuth token
+      try {
+        const tokens = await client.users.getUserOauthAccessToken(userId, "github");
+        githubToken = tokens.data[0]?.token;
+      } catch {}
     }
 
     if (!githubToken) {
       return NextResponse.json(
-        { error: "GitHub not connected. Please connect your GitHub account or provide a Personal Access Token." },
+        { error: "GitHub not connected. Please connect your GitHub account in the Export settings." },
         { status: 400 }
       );
     }
-
 
     const internalKey = getInternalKey();
 
