@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "build:realestate3d": "npm --prefix realestate3d/packages/web run build",
     "start": "next start",
     "lint": "eslint"
   },
