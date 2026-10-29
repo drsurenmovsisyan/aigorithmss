@@ -16,7 +16,27 @@ const nextConfig: NextConfig = {
         ],
       }
     ];
-  }
+  },
+  async rewrites() {
+    return [
+      {
+        source: "/realestate3d",
+        destination: "https://realestate3dx.vercel.app",
+      },
+      {
+        source: "/realestate3d/:path*",
+        destination: "https://realestate3dx.vercel.app/:path*",
+      },
+      {
+        source: "/assets/:path*",
+        destination: "https://realestate3dx.vercel.app/assets/:path*",
+      },
+      {
+        source: "/cesium/:path*",
+        destination: "https://realestate3dx.vercel.app/cesium/:path*",
+      },
+    ];
+  },
 };
 
 export default withSentryConfig(nextConfig, {
