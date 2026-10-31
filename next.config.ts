@@ -5,16 +5,18 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
-        source: "/:path*",
+        // Apply COEP/COOP to the main app only — NOT to /realestate3d/*
+        // Cesium needs to load cross-origin imagery tiles (Bing, Ion CDN) without these restrictions
+        source: "/((?!realestate3d).*)",
         headers: [
-          { 
+          {
             key: "Cross-Origin-Embedder-Policy", value: "credentialless"
           },
-          { 
+          {
             key: "Cross-Origin-Opener-Policy", value: "same-origin"
           },
         ],
-      }
+      },
     ];
   },
   async rewrites() {
